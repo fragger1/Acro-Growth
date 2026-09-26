@@ -37,6 +37,14 @@ def test_clean_keeps_business_domains_that_start_like_providers():
     ]
 
 
+def test_clean_keeps_business_domains_on_other_suffixes():
+    assert clean_emails(["info@live.info", "hi@live.co", "a@outlook.io"]) == [
+        "info@live.info",
+        "hi@live.co",
+        "a@outlook.io",
+    ]
+
+
 def test_clean_handles_none():
     assert clean_emails(None) == []
 

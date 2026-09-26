@@ -25,14 +25,19 @@ PERSONAL_DOMAINS = {
     "optonline.net", "frontier.com", "windstream.net", "rogers.com", "shaw.ca", "sympatico.ca",
     "btinternet.com", "sky.com", "qq.com", "163.com",
 }
+PERSONAL_SUFFIXES = {
+    "com", "net", "org", "co.uk", "ca", "fr", "de", "it", "es", "ie", "nl", "be", "ch", "at",
+    "se", "dk", "no", "fi", "pl", "pt", "gr", "ru", "in", "co.in", "jp", "co.jp", "com.au",
+    "com.br", "com.mx", "com.ar", "co.nz", "co.za",
+}
 
 
 def _is_personal(domain: str) -> bool:
     if domain in PERSONAL_DOMAINS:
         return True
     brand, _, suffix = domain.partition(".")
-    # brand + short public suffix only: yahoo.com, yahoo.co.uk, live.fr (not livemusicaustin.com)
-    return brand in PERSONAL_BRANDS and len(suffix) <= 6
+    # brand + known personal provider suffix: yahoo.com, yahoo.co.uk, live.fr (not live.info, livemusicaustin.com)
+    return brand in PERSONAL_BRANDS and suffix in PERSONAL_SUFFIXES
 
 
 def _domain_blocked(domain: str) -> bool:
