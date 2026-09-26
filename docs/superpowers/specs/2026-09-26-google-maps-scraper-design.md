@@ -102,6 +102,7 @@ RLS is enabled on every table with no policies. Only the service/secret key (use
 
 **Email filtering (in `emails.py`)**
 - Drop placeholder or example addresses and known platform or tracker domains (sentry, wix, squarespace, godaddy, cloudflare, and similar).
+- Drop personal inboxes entirely: Gmail/Googlemail, Yahoo, Hotmail, Outlook, Live, MSN, AOL, iCloud/me.com/mac.com, Proton, GMX, Yandex (including country variants such as yahoo.co.uk), and ISP mailboxes (Comcast, AT&T, Verizon, BT, etc.). Generic business inboxes such as info@ or contact@ are wanted.
 - Drop strings that end in image or file extensions, and anything that fails a basic syntax check.
 - Lowercase and deduplicate.
 - The primary email is the first address on the business's own website domain, preferring `info@`, `contact@`, `office@`, `hello@` or `admin@`. If there is none on their domain, the first remaining address is used.

@@ -21,6 +21,7 @@
 - Skip re-queueing a (query, client) that is pending/running, or finished `done` within **30 days**, unless `--force`.
 - gosom JSON quirks: longitude field is spelled `longtitude`; website is `web_site`; the name is `title`; rating is `review_rating`.
 - Strip heavy keys from `raw` before storing: `user_reviews`, `user_reviews_extended`, `images`, `popular_times` (keeps the Supabase free tier's 500 MB viable).
+- Drop personal-inbox emails entirely (gmail, googlemail, yahoo, hotmail, outlook, live, msn, aol, icloud, me.com, proton, gmx, yandex, and ISP mail like comcast/att/verizon). Generic business inboxes (info@, contact@, …) are wanted.
 - Supabase caps RPC/select responses at 1000 rows, so paginate reads with `.range()`.
 - All tables have RLS enabled with no policies. Functions are executable by `service_role` only.
 
@@ -260,10 +261,26 @@ def test_clean_drops_junk():
         "abc123@sentry.io",
         "x@sentry-next.wixpress.com",
         "not-an-email",
-        "yourname@gmail.com",
+        "yourname@acme.com",
         "real@acme.com",
     ]
     assert clean_emails(raw) == ["real@acme.com"]
+
+
+def test_clean_drops_personal_inboxes():
+    raw = [
+        "joe@gmail.com", "a@googlemail.com", "b@yahoo.com", "c@yahoo.co.uk", "d@hotmail.com",
+        "e@outlook.com", "f@live.com", "g@aol.com", "h@icloud.com", "i@me.com", "j@comcast.net",
+        "k@proton.me", "info@acme.com", "sales@acme.com",
+    ]
+    assert clean_emails(raw) == ["info@acme.com", "sales@acme.com"]
+
+
+def test_clean_keeps_business_domains_that_start_like_providers():
+    assert clean_emails(["info@livemusicaustin.com", "hi@outlookdental.com"]) == [
+        "info@livemusicaustin.com",
+        "hi@outlookdental.com",
+    ]
 
 
 def test_clean_handles_none():
@@ -282,12 +299,12 @@ def test_site_domain():
 
 
 def test_primary_prefers_role_address_on_own_domain():
-    emails = ["john@gmail.com", "sales@acme.com", "info@acme.com"]
+    emails = ["john@acme.com", "sales@acme.com", "info@acme.com"]
     assert pick_primary(emails, "acme.com") == "info@acme.com"
 
 
 def test_primary_falls_back_to_first_own_domain():
-    assert pick_primary(["john@gmail.com", "sales@acme.com"], "acme.com") == "sales@acme.com"
+    assert pick_primary(["x@agency.com", "john@acme.com"], "acme.com") == "john@acme.com"
 
 
 def test_primary_subdomain_website_matches_root_email():
@@ -295,7 +312,7 @@ def test_primary_subdomain_website_matches_root_email():
 
 
 def test_primary_falls_back_to_first_any():
-    assert pick_primary(["john@gmail.com", "b@yahoo.com"], "acme.com") == "john@gmail.com"
+    assert pick_primary(["x@agency.com", "b@other.com"], "acme.com") == "x@agency.com"
 
 
 def test_primary_empty():
@@ -325,9 +342,29 @@ BLOCKED_LOCAL_PARTS = {
 }
 PREFERRED_LOCAL_PARTS = ("info", "contact", "office", "hello", "admin")
 
+# Personal inboxes are never wanted for cold email. Generic business inboxes are fine.
+PERSONAL_BRANDS = {
+    "gmail", "googlemail", "yahoo", "ymail", "rocketmail", "hotmail", "outlook", "live", "msn",
+    "aol", "icloud", "gmx", "yandex", "protonmail",
+}
+PERSONAL_DOMAINS = {
+    "me.com", "mac.com", "proton.me", "pm.me", "mail.com", "comcast.net", "att.net",
+    "sbcglobal.net", "verizon.net", "bellsouth.net", "cox.net", "charter.net", "earthlink.net",
+    "optonline.net", "frontier.com", "windstream.net", "rogers.com", "shaw.ca", "sympatico.ca",
+    "btinternet.com", "sky.com", "qq.com", "163.com",
+}
+
+
+def _is_personal(domain: str) -> bool:
+    if domain in PERSONAL_DOMAINS:
+        return True
+    brand, _, suffix = domain.partition(".")
+    # brand + short public suffix only: yahoo.com, yahoo.co.uk, live.fr (not livemusicaustin.com)
+    return brand in PERSONAL_BRANDS and len(suffix) <= 6
+
 
 def _domain_blocked(domain: str) -> bool:
-    return any(domain == d or domain.endswith("." + d) for d in BLOCKED_DOMAINS)
+    return _is_personal(domain) or any(domain == d or domain.endswith("." + d) for d in BLOCKED_DOMAINS)
 
 
 def clean_emails(raw: list[str] | None) -> list[str]:
@@ -434,7 +471,7 @@ def test_full_entry():
     assert p["lat"] == 30.2672 and p["lng"] == -97.7431
     assert p["maps_url"].startswith("https://www.google.com/maps/")
     assert p["hours"] == {"Monday": ["7 AM-5 PM"]}
-    assert p["emails"] == ["info@acmecoffee.com", "owner@gmail.com"]
+    assert p["emails"] == ["info@acmecoffee.com"]  # logo@2x.png and owner@gmail.com dropped
     assert p["primary_email"] == "info@acmecoffee.com"
 
 
