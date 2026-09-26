@@ -1,0 +1,15 @@
+# secrets
+.env
+*.proxies.txt
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# runtime output
+exports/
+bin/
+logs/
+tmp/
