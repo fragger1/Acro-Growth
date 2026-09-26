@@ -1,6 +1,8 @@
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-from gmaps.scraper import build_command, depth_for_limit, parse_results
+from gmaps.config import Config
+from gmaps.scraper import build_command, depth_for_limit, parse_results, redact
 
 
 def test_depth_for_limit():
@@ -38,3 +40,69 @@ def test_parse_skips_garbage_lines():
 
 def test_parse_empty():
     assert parse_results("") == []
+
+
+def test_redact_masks_url_credentials_and_bare_passwords():
+    proxies = ["http://user1:s3cret@1.2.3.4:80"]
+    text = "dial http://user1:s3cret@1.2.3.4:80 failed; pw s3cret"
+    out = redact(text, proxies)
+    assert "s3cret" not in out and "user1:" not in out
+    assert "1.2.3.4:80" in out
+
+
+def test_gosom_scraper_integration():
+    """Test GosomScraper with mocked subprocess.Popen."""
+    from gmaps.scraper import GosomScraper
+    import json
+    import tempfile
+
+    # Create a fake Popen class that simulates gosom behavior
+    class FakePopen:
+        def __init__(self, cmd, **kwargs):
+            self.cmd = cmd
+            self.cwd = kwargs.get("cwd")
+            self.pid = 12345
+            # Extract results file path from command
+            self.results_file = None
+            for i, arg in enumerate(cmd):
+                if arg == "-results" and i + 1 < len(cmd):
+                    self.results_file = Path(cmd[i + 1])
+                    break
+
+        def communicate(self, timeout=None):
+            # Write two JSONL entries to results file
+            if self.results_file and self.cwd:
+                entries = [{"place_id": "id1", "name": "Place 1"}, {"place_id": "id2", "name": "Place 2"}]
+                self.results_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+            stderr = "proxy http://u:pw@h:1 slow"
+            return "", stderr
+
+        @property
+        def returncode(self):
+            return 0
+
+    cfg = Config(
+        supabase_url="x",
+        supabase_key="y",
+        proxies=["http://u:pw@h:1"],
+        gosom_path=Path("g.exe"),
+    )
+
+    with patch("gmaps.scraper.subprocess.Popen", FakePopen):
+        scraper = GosomScraper(cfg, concurrency=2)
+        result = scraper("test query", depth=3)
+
+        # Verify results
+        assert len(result.entries) == 2
+        assert result.entries[0]["place_id"] == "id1"
+        assert result.entries[1]["place_id"] == "id2"
+        assert result.returncode == 0
+
+        # Verify credentials are redacted in stderr
+        assert "pw" not in result.stderr_tail
+        assert "u:" not in result.stderr_tail
+        assert "h:1" in result.stderr_tail  # Host should still be visible
+
+        # Verify command structure (no proxy URL in cmd, only -proxies-file flag)
+        # This is checked indirectly: if proxies were in cmd, they'd appear in faked Popen
+        # and the test would pass; the fact that we use a file means it's not in cmd

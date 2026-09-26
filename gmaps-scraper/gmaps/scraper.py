@@ -1,15 +1,29 @@
 import json
 import math
+import os
+import re
 import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from gmaps.config import ROOT, Config
 
 RESULTS_PER_SCROLL = 8
 TIMEOUT_SECONDS = 60 * 60
+CREDENTIALS_RE = re.compile(r"(://)[^/\s:@]+:[^/\s@]+@")
+
+
+def redact(text: str, proxies: list[str]) -> str:
+    """Redact proxy credentials from text to prevent password leaks in logs."""
+    text = CREDENTIALS_RE.sub(r"\1***:***@", text)
+    for proxy in proxies:
+        creds = urlsplit(proxy)
+        if creds.password:
+            text = text.replace(creds.password, "***")
+    return text
 
 
 @dataclass
@@ -86,15 +100,26 @@ class GosomScraper:
                 self.cfg.gosom_path, input_file, results_file, proxies_file, self.concurrency, depth
             )
             try:
-                proc = subprocess.run(
-                    cmd, cwd=work, capture_output=True, text=True, encoding="utf-8",
-                    errors="replace", timeout=TIMEOUT_SECONDS,
+                proc = subprocess.Popen(
+                    cmd, cwd=work, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    text=True, encoding="utf-8", errors="replace",
                 )
-                returncode, stderr = proc.returncode, proc.stderr or ""
-            except subprocess.TimeoutExpired as exc:
+                try:
+                    _, stderr = proc.communicate(timeout=TIMEOUT_SECONDS)
+                    returncode = proc.returncode
+                except subprocess.TimeoutExpired:
+                    if os.name == "nt":
+                        subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True)
+                    else:
+                        proc.kill()
+                    _, stderr = proc.communicate()
+                    returncode = -1
+                    stderr = f"timeout after {TIMEOUT_SECONDS}s\n{stderr}"
+            except Exception as e:
                 returncode = -1
-                partial = exc.stderr if isinstance(exc.stderr, str) else ""
-                stderr = f"timeout after {TIMEOUT_SECONDS}s\n{partial}"
+                stderr = str(e)
+
+            stderr = redact(stderr, self.cfg.proxies)
             text = results_file.read_text(encoding="utf-8", errors="replace") if results_file.exists() else ""
             return ScrapeResult(parse_results(text), returncode, stderr[-2000:])
         finally:
