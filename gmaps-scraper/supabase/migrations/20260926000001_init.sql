@@ -227,12 +227,3 @@ grant execute on function public.upsert_places(jsonb, text, bigint) to service_r
 grant execute on function public.claim_next_search(bigint) to service_role;
 grant execute on function public.leads_for_export(text, timestamptz, text, boolean, boolean) to service_role;
 revoke all on public.leads_export from anon, authenticated;
-
--- Grant service_role direct table access for the data access layer
-grant select on table public.settings to service_role;
-grant select, insert, update on table public.runs to service_role;
-grant select, insert, update on table public.search_queue to service_role;
-grant select, insert, update on table public.places to service_role;
-grant select, insert on table public.place_clients to service_role;
-grant select, insert on table public.exports to service_role;
-grant select, insert on table public.export_items to service_role;
