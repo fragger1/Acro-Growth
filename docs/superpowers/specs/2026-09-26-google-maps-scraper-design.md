@@ -10,7 +10,7 @@ Build cold-email lead lists from Google Maps for AcroGrowth ("me") and done-for-
 ## Non-goals
 
 - Email verification, and pushing leads into Smartlead/Instantly (later, separate project).
-- Third-party enrichment for places with no website email (later, separate project).
+- Finding emails for places with no website email (later, separate project): generate candidate addresses on the business domain (info@, contact@, owner-name patterns) and verify them. All places are saved regardless of email, so this step can run later against `places` where `primary_email is null and domain is not null`.
 - Any UI or client-facing access. Jeff never touches the system.
 - Writing our own Google Maps scraper.
 
