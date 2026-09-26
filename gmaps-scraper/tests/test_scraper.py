@@ -54,7 +54,9 @@ def test_gosom_scraper_integration():
     """Test GosomScraper with mocked subprocess.Popen."""
     from gmaps.scraper import GosomScraper
     import json
-    import tempfile
+
+    # Capture cmd and cwd from Popen calls
+    captured = {}
 
     # Create a fake Popen class that simulates gosom behavior
     class FakePopen:
@@ -62,6 +64,9 @@ def test_gosom_scraper_integration():
             self.cmd = cmd
             self.cwd = kwargs.get("cwd")
             self.pid = 12345
+            # Record the cmd and cwd for assertions
+            captured["cmd"] = list(cmd)
+            captured["cwd"] = self.cwd
             # Extract results file path from command
             self.results_file = None
             for i, arg in enumerate(cmd):
@@ -103,6 +108,11 @@ def test_gosom_scraper_integration():
         assert "u:" not in result.stderr_tail
         assert "h:1" in result.stderr_tail  # Host should still be visible
 
-        # Verify command structure (no proxy URL in cmd, only -proxies-file flag)
-        # This is checked indirectly: if proxies were in cmd, they'd appear in faked Popen
-        # and the test would pass; the fact that we use a file means it's not in cmd
+        # Verify command structure: -proxies-file must be present
+        assert "-proxies-file" in captured["cmd"]
+
+        # Verify no proxy credentials appear in command line
+        assert not any("u:pw@" in part or "pw" == part for part in captured["cmd"])
+
+        # Verify temp working directory was cleaned up after the call
+        assert not Path(captured["cwd"]).exists()
