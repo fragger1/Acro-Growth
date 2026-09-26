@@ -105,7 +105,7 @@ PROXIES_FILE=
 GOSOM_PATH=
 ```
 
-`gmaps-scraper/gmaps/__init__.py`: empty file.
+`gmaps-scraper/gmaps/__init__.py` and `gmaps-scraper/tests/__init__.py`: empty files.
 
 `gmaps-scraper/gmaps/__main__.py`:
 ```python
@@ -1142,7 +1142,8 @@ class GosomScraper:
                 returncode, stderr = proc.returncode, proc.stderr or ""
             except subprocess.TimeoutExpired as exc:
                 returncode = -1
-                stderr = f"timeout after {TIMEOUT_SECONDS}s\n" + (exc.stderr or "" if isinstance(exc.stderr, str) else "")
+                partial = exc.stderr if isinstance(exc.stderr, str) else ""
+                stderr = f"timeout after {TIMEOUT_SECONDS}s\n{partial}"
             text = results_file.read_text(encoding="utf-8", errors="replace") if results_file.exists() else ""
             return ScrapeResult(parse_results(text), returncode, stderr[-2000:])
         finally:

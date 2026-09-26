@@ -22,6 +22,8 @@ Rejected alternatives: gosom's native Postgres mode (its own jsonb schema, awkwa
 
 ## Components
 
+All project files live under `gmaps-scraper/` in the repo.
+
 ```
 gmaps/
   config.py      load .env; parse proxies file (ip:port:user:pass -> http://user:pass@ip:port)
@@ -48,7 +50,7 @@ Stack: Python 3.12+, `supabase` Python client, `python-dotenv`, `pytest`. gosom 
 - Unique on (`query`, `client`) among rows that are `pending` or `running`, so the same search can't be queued twice.
 
 **`places`**: one row per business, primary key `place_id` (Google's ID).
-- `name`, `category`, `categories[]`, `address`, `city`, `state`, `postal_code`, `country`, `phone`, `website`, `domain`, `rating`, `review_count`, `lat`, `lng`, `maps_url`, `hours` (jsonb), `emails[]`, `primary_email`, `socials` (jsonb), `raw` (jsonb, full gosom record), `first_seen_at`, `last_scraped_at`.
+- `name`, `category`, `categories[]`, `address`, `city`, `state`, `postal_code`, `country`, `phone`, `website`, `domain`, `rating`, `review_count`, `lat`, `lng`, `maps_url`, `hours` (jsonb), `emails[]`, `primary_email`, `raw` (jsonb, gosom record minus `user_reviews`, `user_reviews_extended`, `images`, `popular_times` to save space). gosom does not extract social links, so there is no socials column., `first_seen_at`, `last_scraped_at`.
 - When a place is scraped again, the fields are refreshed and `emails` is the union of old and new, so found emails are never lost.
 
 **`place_clients`**: many-to-many link between places and clients.
@@ -57,7 +59,7 @@ Stack: Python 3.12+, `supabase` Python client, `python-dotenv`, `pytest`. gosom 
 **`settings`**: key/value store, e.g. `nightly_limit` (integer, or null = unlimited), `concurrency`, `depth`.
 
 **`runs`**: one row per run.
-- `id`, `trigger` (`scheduled` | `manual`), `limit` (null = unlimited), `status`, `searches_done`, `places_scraped`, `places_new`, `places_with_email`, `failed_searches`, `started_at`, `finished_at`, `notes`.
+- `id`, `trigger` (`scheduled` | `manual`), `place_limit` (null = unlimited), `status`, `searches_done`, `places_scraped`, `places_new`, `places_with_email`, `failed_searches`, `started_at`, `finished_at`, `notes`.
 
 **`exports`**: audit log so `--new-only` works.
 - `id`, `client`, `filters` (jsonb), `row_count`, `file_name`, `created_at`, plus `export_items(export_id, place_id)`.
@@ -71,7 +73,7 @@ RLS is enabled on every table with no policies. Only the service/secret key (use
 1. **Trigger.** Windows Task Scheduler runs `gmaps run --scheduled` nightly at 01:00, with "run as soon as possible after a missed start" enabled. The limit comes from `settings.nightly_limit`. Manual runs use `gmaps run --limit N` or `gmaps run --all`. A `runs` row is inserted with status `running`.
 2. **Recover.** Any `search_queue` rows still `running` from a previous crashed run go back to `pending`.
 3. **Pick.** Take the oldest `pending` search and mark it `running` with this `run_id`.
-4. **Scrape.** Write the query to a temp input file and run gosom with `-input <file> -json -results <file> -email -proxies <list> -c <concurrency> -depth <depth> -exit-on-inactivity 3m`. Concurrency defaults to 2–4 while on the 10 datacenter proxies.
+4. **Scrape.** Write the query to a temp input file and run gosom with `-input <file> -json -results <file> -email -proxies-file <temp file> -c <concurrency> -depth <depth> -exit-on-inactivity 3m`. Concurrency defaults to 2–4 while on the 10 datacenter proxies.
 5. **Save.** Normalize each result and upsert into `places` by `place_id`, merging emails. Insert into `place_clients` if the link doesn't exist yet. Count found vs new places, where new means the place was new to that client.
 6. **Per-search limit.** If `place_limit` is set, stop saving once that many places are reached. gosom `-depth` is also derived from the limit to avoid unneeded scrolling.
 7. **Run limit.** After each search, add its new places to the run total. If the total reaches the run limit, stop and leave the remaining searches `pending`. With `--all`, keep going until the queue is empty.
