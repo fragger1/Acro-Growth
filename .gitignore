@@ -13,3 +13,6 @@ exports/
 bin/
 logs/
 tmp/
+
+# agent scratch
+.superpowers/
