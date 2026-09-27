@@ -15,7 +15,8 @@ class RunStats:
     failed_searches: int = 0
 
 
-def run(db, scrape, *, trigger: str, limit: int | None, default_depth: int, log=print) -> RunStats:
+def run(db, scrape, *, trigger: str, limit: int | None, default_depth: int, log=print,
+        find_emails=None) -> RunStats:
     db.reset_stale()
     run_id = db.create_run(trigger, limit)
     stats = RunStats()
@@ -38,6 +39,9 @@ def run(db, scrape, *, trigger: str, limit: int | None, default_depth: int, log=
             places = dedupe_places([normalize(e) for e in result.entries])
             if place_limit:
                 places = places[:place_limit]
+
+            if find_emails is not None and places:
+                find_emails(places)
 
             if not places and result.returncode != 0:
                 db.finish_search(search["id"], "failed", 0, 0, result.stderr_tail or f"exit {result.returncode}")

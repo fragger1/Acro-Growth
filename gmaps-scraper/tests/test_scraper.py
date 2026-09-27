@@ -16,9 +16,10 @@ def test_build_command_with_proxies():
     cmd = build_command(Path("g.exe"), Path("in.txt"), Path("out.json"), Path("px.txt"), 3, 10)
     assert cmd[0] == "g.exe"
     joined = " ".join(cmd)
-    for part in ("-input in.txt", "-results out.json", "-json", "-email", "-c 3", "-depth 10",
+    for part in ("-input in.txt", "-results out.json", "-json", "-c 3", "-depth 10",
                  "-exit-on-inactivity 3m", "-proxies-file px.txt"):
         assert part in joined
+    assert "-email" not in cmd
 
 
 def test_build_command_without_proxies():

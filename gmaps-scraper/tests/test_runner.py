@@ -73,6 +73,25 @@ def test_good_search_resets_bad_streak():
     assert len(db.pending) == 0
 
 
+def test_find_emails_called_before_upsert_and_stats_reflect_enrichment():
+    db = FakeDb([search(1)])
+    scraper = ScriptedScraper([ok(entry("a"), entry("b"))])
+    calls = []
+
+    def fake_find_emails(places):
+        calls.append(list(places))
+        # enrich only the first place
+        places[0]["primary_email"] = "info@a.com"
+
+    stats = run(db, scraper, trigger="manual", limit=None, default_depth=12, log=quiet,
+                find_emails=fake_find_emails)
+
+    assert len(calls) == 1
+    assert [p["place_id"] for p in calls[0]] == ["a", "b"]
+    assert stats.places_with_email == 1
+    assert db.places[("a", "me")]["primary_email"] == "info@a.com"
+
+
 def test_exception_marks_run_failed_and_reraises():
     class Boom:
         def __call__(self, q, d):

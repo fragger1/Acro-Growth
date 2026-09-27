@@ -26,6 +26,7 @@ def _int_or_none(value):
 
 
 def cmd_run(args, db, cfg, log):
+    from gmaps.email_finder import enrich_places
     from gmaps.runner import run
     from gmaps.scraper import GosomScraper
 
@@ -42,7 +43,7 @@ def cmd_run(args, db, cfg, log):
     log.info(f"run start: limit={limit or 'unlimited'} concurrency={concurrency} depth={depth} "
              f"proxies={len(cfg.proxies)}")
     stats = run(db, GosomScraper(cfg, concurrency), trigger="scheduled" if args.scheduled else "manual",
-                limit=limit, default_depth=depth, log=log.info)
+                limit=limit, default_depth=depth, log=log.info, find_emails=enrich_places)
     log.info(f"run finished: {stats}")
 
 

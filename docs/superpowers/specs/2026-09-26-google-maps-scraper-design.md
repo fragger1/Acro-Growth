@@ -10,13 +10,13 @@ Build cold-email lead lists from Google Maps for AcroGrowth ("me") and done-for-
 ## Non-goals
 
 - Email verification, and pushing leads into Smartlead/Instantly (later, separate project).
-- Finding emails for places with no website email (later, separate project): generate candidate addresses on the business domain (info@, contact@, owner-name patterns) and verify them. All places are saved regardless of email, so this step can run later against `places` where `primary_email is null and domain is not null`.
+- Generating and verifying candidate addresses (info@, contact@, owner-name patterns) for places where the website crawl finds no email. All places are saved regardless of email, so this step can run later against `places` where `primary_email is null and domain is not null`.
 - Any UI or client-facing access. Jeff never touches the system.
 - Writing our own Google Maps scraper.
 
 ## Approach
 
-Wrap the open-source [gosom/google-maps-scraper](https://github.com/gosom/google-maps-scraper) (Go, headless browser) with a small Python orchestrator. gosom does the scraping and email extraction. Python owns the queue, the limits, the Supabase storage, deduplication, and exports.
+Wrap the open-source [gosom/google-maps-scraper](https://github.com/gosom/google-maps-scraper) (Go, headless browser) with a small Python orchestrator. gosom does the scraping; emails come from our own direct-HTTP website crawler (`email_finder.py`), not gosom's `-email` flag. Python owns the queue, the limits, the Supabase storage, deduplication, and exports.
 
 Rejected alternatives: gosom's native Postgres mode (its own jsonb schema, awkward to tag or deduplicate, connection-pooler friction) and a custom Playwright scraper (rebuilds gosom and takes on maintenance every time Google changes Maps).
 
@@ -31,7 +31,9 @@ gmaps/
   scraper.py     build gosom command line, run it, stream JSON-lines results
   normalize.py   gosom JSON -> Place record (pure, no I/O)
   emails.py      junk-email filter + primary-email picker (pure)
-  runner.py      run loop: pick searches, scrape, upsert, count against limit, close run
+  email_finder.py  direct-HTTP website email finder: homepage + contact-like pages, Cloudflare
+                    email-protection decoding, run concurrently over places with no email yet
+  runner.py      run loop: pick searches, scrape, enrich emails, upsert, count against limit, close run
   queue.py       add searches (keyword x locations x client) with duplicate check
   export.py      CSV export with filters + export log
   cli.py         `gmaps run | queue add | export | status`
@@ -73,7 +75,8 @@ RLS is enabled on every table with no policies. Only the service/secret key (use
 1. **Trigger.** Windows Task Scheduler runs `gmaps run --scheduled` nightly at 01:00, with "run as soon as possible after a missed start" enabled. The limit comes from `settings.nightly_limit`. Manual runs use `gmaps run --limit N` or `gmaps run --all`. A `runs` row is inserted with status `running`.
 2. **Recover.** Any `search_queue` rows still `running` from a previous crashed run go back to `pending`.
 3. **Pick.** Take the oldest `pending` search and mark it `running` with this `run_id`.
-4. **Scrape.** Write the query to a temp input file and run gosom with `-input <file> -json -results <file> -email -proxies-file <temp file> -c <concurrency> -depth <depth> -exit-on-inactivity 3m`. Concurrency defaults to 2–4 while on the 10 datacenter proxies.
+4. **Scrape.** Write the query to a temp input file and run gosom with `-input <file> -json -results <file> -proxies-file <temp file> -c <concurrency> -depth <depth> -exit-on-inactivity 3m` (no `-email`; gosom's own email extraction is slow and low-yield). Concurrency defaults to 2–4 while on the 10 datacenter proxies.
+4a. **Find emails.** For each normalized, deduped place with a website and no email yet, `email_finder.enrich_places` fetches the homepage directly (no proxy — business sites don't block, and proxies are reserved for Google) plus up to 4 contact-like links found on it (paths matching `contact|about|connect|wholesale|catering|info`) and the fallbacks `/contact`, `/contact-us`, `/about`, decodes Cloudflare email-protection spans, and runs `clean_emails` over everything found. Runs concurrently (thread pool) across places.
 5. **Save.** Normalize each result and upsert into `places` by `place_id`, merging emails. Insert into `place_clients` if the link doesn't exist yet. Count found vs new places, where new means the place was new to that client.
 6. **Per-search limit.** If `place_limit` is set, stop saving once that many places are reached. gosom `-depth` is also derived from the limit to avoid unneeded scrolling.
 7. **Run limit.** After each search, add its new places to the run total. If the total reaches the run limit, stop and leave the remaining searches `pending`. With `--all`, keep going until the queue is empty.
@@ -109,9 +112,9 @@ RLS is enabled on every table with no policies. Only the service/secret key (use
 
 ## Proxies
 
-- Currently 10 Webshare free datacenter proxies (file path in `.env` → `PROXIES_FILE`). They're parsed into gosom's `-proxies` format at runtime and never committed.
+- Currently 10 Webshare free datacenter proxies (file path in `.env` → `PROXIES_FILE`). They're parsed into gosom's `-proxies` format at runtime and never committed, and are only used for gosom's Google Maps scraping.
 - The live test measures the block rate. If datacenter IPs get blocked, switch to rotating residential (Webshare Rotating Residential or DataImpulse, around $1–3.50/GB). That's a config change only.
-- The gosom docs don't say whether website email visits also go through the proxy. The test will check. If they do and bandwidth matters later, email extraction could move into a separate step with no proxy (not in this scope).
+- Website email fetches in `email_finder.py` never go through a proxy: business sites don't block direct HTTP, and proxies are reserved for Google Maps traffic.
 
 ## Configuration
 

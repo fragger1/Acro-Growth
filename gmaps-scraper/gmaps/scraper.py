@@ -47,7 +47,6 @@ def build_command(
         "-input", str(input_file),
         "-results", str(results_file),
         "-json",
-        "-email",
         "-c", str(concurrency),
         "-depth", str(depth),
         "-exit-on-inactivity", "3m",
