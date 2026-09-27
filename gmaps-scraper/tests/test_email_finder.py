@@ -63,6 +63,18 @@ def test_contact_links_never_follows_other_hosts():
     assert all("facebook.com" not in l for l in links)
 
 
+def test_contact_links_www_insensitive_both_directions():
+    # base has no www, link does: still same site.
+    html = '<a href="https://www.acme.com/contact-us">Contact</a>'
+    links = contact_links(html, "https://acme.com/")
+    assert "https://www.acme.com/contact-us" in links
+
+    # base has www, link doesn't: still same site.
+    html2 = '<a href="https://acme.com/contact-us">Contact</a>'
+    links2 = contact_links(html2, "https://www.acme.com/")
+    assert "https://acme.com/contact-us" in links2
+
+
 def _make_client(handler):
     return httpx.Client(transport=httpx.MockTransport(handler))
 
@@ -153,6 +165,49 @@ def test_href_and_cfemail_accept_single_quotes():
     hex_value = _cf_encode("hi@acme.com", 0x42)
     cf_html = f"<span data-cfemail='{hex_value}'>[email protected]</span>"
     assert extract_emails(cf_html) == ["hi@acme.com"]
+
+
+def test_find_emails_prefixes_schemeless_website_with_http():
+    seen_urls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_urls.append(str(request.url))
+        return httpx.Response(200, text="info@acme.com", headers={"content-type": "text/html"})
+
+    client = _make_client(handler)
+    result = find_emails("acme.com", client)
+    assert result == ["info@acme.com"]
+    assert seen_urls[0].startswith("http://acme.com")
+
+
+def test_fetch_html_stops_after_wall_clock_deadline(monkeypatch):
+    # Simulate a slow-trickling response: the monotonic clock jumps past the
+    # 20s deadline right after the first chunk is read, so _fetch_html should
+    # stop reading further chunks and return only what it already has,
+    # instead of reading forever.
+    times = iter([0.0])  # request-start timestamp
+
+    def fake_monotonic():
+        try:
+            return next(times)
+        except StopIteration:
+            return 25.0  # every check after the first chunk reports "deadline passed"
+
+    monkeypatch.setattr(email_finder.time, "monotonic", fake_monotonic)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=iter([b"first-chunk@acme.com ", b"second-chunk@acme.com"]),
+            headers={"content-type": "text/html"},
+        )
+
+    client = _make_client(handler)
+    result = email_finder._fetch_html(client, "https://acme.com/")
+    assert result is not None
+    text, _final_url = result
+    assert "first-chunk@acme.com" in text
+    assert "second-chunk@acme.com" not in text
 
 
 def test_enrich_places_skips_no_website_and_existing_emails(monkeypatch):

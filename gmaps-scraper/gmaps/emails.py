@@ -2,6 +2,7 @@ import re
 from urllib.parse import urlparse
 
 EMAIL_RE = re.compile(r"^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$")
+ENCODED_PREFIX_RE = re.compile(r"^(?:u00[0-9a-f]{2}|%[0-9a-f]{2})")
 FILE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico", ".js", ".css", ".pdf")
 BLOCKED_DOMAINS = {
     "example.com", "example.org", "domain.com", "email.com", "yourdomain.com", "yoursite.com",
@@ -48,6 +49,11 @@ def clean_emails(raw: list[str] | None) -> list[str]:
     out: list[str] = []
     for item in raw or []:
         email = (item or "").strip().lower().removeprefix("mailto:").split("?")[0]
+        while True:
+            stripped = ENCODED_PREFIX_RE.sub("", email)
+            if stripped == email:
+                break
+            email = stripped
         if email.endswith(FILE_EXTENSIONS) or not EMAIL_RE.match(email):
             continue
         local, domain = email.rsplit("@", 1)

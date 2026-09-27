@@ -1,5 +1,6 @@
 import html
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urljoin, urlparse
 
@@ -19,6 +20,7 @@ MAX_CONTACT_LINKS = 4
 MAX_BYTES = 2_000_000
 MAX_REDIRECTS = 5
 REQUEST_TIMEOUT = 10
+FETCH_DEADLINE_SECONDS = 20
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0.0.0 Safari/537.36"
@@ -52,12 +54,12 @@ def extract_emails(html_text: str) -> list[str]:
 
 
 def contact_links(html_text: str, base_url: str) -> list[str]:
-    base_host = urlparse(base_url).netloc
+    base_host = _site_host(base_url)
     links: list[str] = []
     for href in HREF_RE.findall(html_text or ""):
         absolute = urljoin(base_url, href)
         parsed = urlparse(absolute)
-        if parsed.netloc != base_host:
+        if _site_host(absolute) != base_host:
             continue
         if parsed.path.lower().endswith(BINARY_EXTENSIONS):
             continue
@@ -79,6 +81,7 @@ def _fetch_html(client: httpx.Client, url: str) -> tuple[str, str] | None:
 
     Returns (html_text, final_url) on a 200 HTML-ish response, else None. Never raises.
     """
+    started = time.monotonic()
     try:
         with client.stream("GET", url, follow_redirects=True, timeout=REQUEST_TIMEOUT) as response:
             if response.status_code != 200:
@@ -91,6 +94,8 @@ def _fetch_html(client: httpx.Client, url: str) -> tuple[str, str] | None:
                 body.extend(chunk)
                 if len(body) >= MAX_BYTES:
                     break
+                if time.monotonic() - started >= FETCH_DEADLINE_SECONDS:
+                    break
             encoding = response.encoding or "utf-8"
             text = bytes(body).decode(encoding, errors="replace")
             return text, str(response.url)
@@ -99,6 +104,8 @@ def _fetch_html(client: httpx.Client, url: str) -> tuple[str, str] | None:
 
 
 def find_emails(website: str, client: httpx.Client) -> list[str]:
+    if "://" not in website:
+        website = "http://" + website
     homepage = _fetch_html(client, website)
     if homepage is None:
         return []

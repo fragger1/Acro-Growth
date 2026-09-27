@@ -53,6 +53,18 @@ def test_clean_strips_query_string():
     assert clean_emails(["hello@acme.com?subject=hi"]) == ["hello@acme.com"]
 
 
+def test_clean_strips_encoded_unicode_prefix():
+    assert clean_emails(["u003einfo@acme.com"]) == ["info@acme.com"]
+
+
+def test_clean_strips_encoded_percent_prefix():
+    assert clean_emails(["%20info@acme.com"]) == ["info@acme.com"]
+
+
+def test_clean_strips_repeated_encoded_prefixes():
+    assert clean_emails(["u003e%20u003einfo@acme.com"]) == ["info@acme.com"]
+
+
 def test_site_domain():
     assert site_domain("https://www.Acme.com/contact") == "acme.com"
     assert site_domain("acme.com") == "acme.com"
