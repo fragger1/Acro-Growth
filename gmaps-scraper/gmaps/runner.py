@@ -35,29 +35,38 @@ def run(db, scrape, *, trigger: str, limit: int | None, default_depth: int, log=
                 break
             place_limit = search.get("place_limit")
             log(f"[run {run_id}] scraping: {search['query']} (client={search['client']})")
-            result = scrape(search["query"], depth_for_limit(place_limit, default_depth))
-            places = dedupe_places([normalize(e) for e in result.entries])
-            if place_limit:
-                places = places[:place_limit]
+            try:
+                result = scrape(search["query"], depth_for_limit(place_limit, default_depth))
+                places = dedupe_places([normalize(e) for e in result.entries])
+                if place_limit:
+                    places = places[:place_limit]
 
-            if find_emails is not None and places:
-                find_emails(places)
+                if find_emails is not None and places:
+                    find_emails(places)
 
-            if not places and result.returncode != 0:
-                db.finish_search(search["id"], "failed", 0, 0, result.stderr_tail or f"exit {result.returncode}")
+                if not places:
+                    rc = result.returncode
+                    error = result.stderr_tail or (f"exit {rc}" if rc else "0 results")
+                    db.finish_search(search["id"], "failed", 0, 0, error)
+                    stats.failed_searches += 1
+                    bad_streak += 1
+                    log(f"[run {run_id}]   failed: {error}")
+                    continue
+
+                new = db.upsert_places(places, search["client"], search["id"])
+                db.finish_search(search["id"], "done", len(places), new)
+                stats.searches_done += 1
+                stats.places_scraped += len(places)
+                stats.places_new += new
+                stats.places_with_email += sum(1 for p in places if p["primary_email"])
+                bad_streak = 0
+                log(f"[run {run_id}]   {len(places)} places, {new} new (run total new: {stats.places_new})")
+            except Exception as exc:
+                db.finish_search(search["id"], "failed", 0, 0, repr(exc)[:2000])
                 stats.failed_searches += 1
                 bad_streak += 1
-                log(f"[run {run_id}]   failed (exit {result.returncode})")
+                log(f"[run {run_id}]   search failed: {exc!r}")
                 continue
-
-            new = db.upsert_places(places, search["client"], search["id"]) if places else 0
-            db.finish_search(search["id"], "done", len(places), new)
-            stats.searches_done += 1
-            stats.places_scraped += len(places)
-            stats.places_new += new
-            stats.places_with_email += sum(1 for p in places if p["primary_email"])
-            bad_streak = 0 if places else bad_streak + 1
-            log(f"[run {run_id}]   {len(places)} places, {new} new (run total new: {stats.places_new})")
     except Exception as exc:
         status, notes = "failed", repr(exc)[:500]
         raise

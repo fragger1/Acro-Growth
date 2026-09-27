@@ -49,6 +49,7 @@ def test_failed_search_marked_and_run_continues():
     assert db.finished_searches[0][1] == "failed" and "boom" in db.finished_searches[0][4]
     assert db.finished_searches[1][1] == "done"
     assert stats.failed_searches == 1
+    assert stats.searches_done == 1
 
 
 def test_nonzero_exit_with_results_still_saves():
@@ -58,19 +59,36 @@ def test_nonzero_exit_with_results_still_saves():
     assert db.finished_searches[0][1] == "done" and db.finished_searches[0][2] == 1
 
 
+def test_zero_results_marked_failed_with_reason():
+    # rc == 0 but no places found: no stderr, so the error falls back to "0 results".
+    db = FakeDb([search(1)])
+    scraper = ScriptedScraper([ok()])
+    stats = run(db, scraper, trigger="manual", limit=None, default_depth=12, log=quiet)
+    assert db.finished_searches[0][1] == "failed"
+    assert db.finished_searches[0][4] == "0 results"
+    assert stats.failed_searches == 1
+    assert stats.searches_done == 0
+    assert db.places == {}
+
+
 def test_three_bad_searches_in_a_row_stop_the_run():
     db = FakeDb([search(i) for i in range(1, 6)])
     scraper = ScriptedScraper([ScrapeResult([], 1, "x"), ok(), ScrapeResult([], 1, "y")])
-    run(db, scraper, trigger="manual", limit=None, default_depth=12, log=quiet)
+    stats = run(db, scraper, trigger="manual", limit=None, default_depth=12, log=quiet)
     assert len(db.pending) == 2
     assert db.runs[1]["notes"] == "possible proxy block"
+    assert stats.failed_searches == 3
+    assert stats.searches_done == 0
 
 
 def test_good_search_resets_bad_streak():
     db = FakeDb([search(i) for i in range(1, 6)])
     scraper = ScriptedScraper([ok(), ok(), ok(entry("a")), ok(), ok()])
-    run(db, scraper, trigger="manual", limit=None, default_depth=12, log=quiet)
+    stats = run(db, scraper, trigger="manual", limit=None, default_depth=12, log=quiet)
     assert len(db.pending) == 0
+    assert [f[1] for f in db.finished_searches] == ["failed", "failed", "done", "failed", "failed"]
+    assert stats.searches_done == 1
+    assert stats.failed_searches == 4
 
 
 def test_find_emails_called_before_upsert_and_stats_reflect_enrichment():
@@ -93,14 +111,41 @@ def test_find_emails_called_before_upsert_and_stats_reflect_enrichment():
 
 
 def test_exception_marks_run_failed_and_reraises():
-    class Boom:
-        def __call__(self, q, d):
+    """A run-level (DB) failure, not a per-search one, still fails the whole run
+    and reraises. claim_next_search sits outside the per-search try/except."""
+
+    class DeadDb(FakeDb):
+        def claim_next_search(self, run_id):
             raise RuntimeError("kaboom")
 
-    db = FakeDb([search(1)])
+    db = DeadDb([search(1)])
+    scraper = ScriptedScraper([])
     try:
-        run(db, Boom(), trigger="manual", limit=None, default_depth=12, log=quiet)
+        run(db, scraper, trigger="manual", limit=None, default_depth=12, log=quiet)
         raise AssertionError("expected RuntimeError")
     except RuntimeError:
         pass
     assert db.runs[1]["status"] == "failed" and "kaboom" in db.runs[1]["notes"]
+
+
+def test_search_level_exception_isolated_run_still_done():
+    """A per-search exception (e.g. upsert_places raising) fails only that search;
+    the run continues and finishes 'done', not 'failed'."""
+
+    class FlakyDb(FakeDb):
+        def upsert_places(self, places, client, search_id):
+            if search_id == 1:
+                raise RuntimeError("db write failed")
+            return super().upsert_places(places, client, search_id)
+
+    db = FlakyDb([search(1), search(2)])
+    scraper = ScriptedScraper([ok(entry("a")), ok(entry("b"))])
+
+    stats = run(db, scraper, trigger="manual", limit=None, default_depth=12, log=quiet)
+
+    assert db.finished_searches[0][1] == "failed"
+    assert "db write failed" in db.finished_searches[0][4]
+    assert db.finished_searches[1][1] == "done"
+    assert stats.failed_searches == 1
+    assert stats.searches_done == 1
+    assert db.runs[1]["status"] == "done"
