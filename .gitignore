@@ -1,0 +1,19 @@
+# secrets
+.env
+*.proxies.txt
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.egg-info/
+
+# runtime output
+exports/
+bin/
+logs/
+tmp/
+
+# agent scratch
+.superpowers/

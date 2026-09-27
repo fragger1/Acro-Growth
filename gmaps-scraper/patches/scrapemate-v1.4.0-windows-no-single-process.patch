@@ -1,0 +1,36 @@
+--- a/adapters/fetchers/jshttp/jshttp.go	2026-09-26 21:11:29.791857400 +0300
++++ b/adapters/fetchers/jshttp/jshttp.go	2026-09-26 21:12:41.552989100 +0300
+@@ -3,6 +3,7 @@
+ import (
+ 	"context"
+ 	"errors"
++	"runtime"
+ 	"time"
+ 
+ 	"github.com/mxschmitt/playwright-go"
+@@ -298,11 +299,9 @@
+ 			`--disable-dev-shm-usage`,
+ 			`--no-sandbox`,
+ 			`--disable-setuid-sandbox`,
+-			`--no-zygote`,
+ 			`--disable-gpu`,
+ 			`--mute-audio`,
+ 			`--disable-extensions`,
+-			`--single-process`,
+ 			`--disable-breakpad`,
+ 			`--disable-features=TranslateUI,BlinkGenPropertyTrees`,
+ 			`--disable-ipc-flooding-protection`,
+@@ -317,6 +316,13 @@
+ 			"--disable-web-security",
+ 		},
+ 	}
++	if runtime.GOOS != "windows" {
++		// --single-process and --no-zygote crash Chromium on Windows: the page
++		// comes back empty (0 bytes) and scrapemate's acquirePage sees a nil
++		// page, which surfaces upstream as "unexpected page type".
++		// See https://github.com/gosom/google-maps-scraper/issues/322
++		opts.Args = append(opts.Args, `--no-zygote`, `--single-process`)
++	}
+ 	if disableImages {
+ 		opts.Args = append(opts.Args, `--blink-settings=imagesEnabled=false`)
+ 	}
