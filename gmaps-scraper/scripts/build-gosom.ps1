@@ -7,6 +7,11 @@ $GosomVersion = "v1.18.1"
 $ScrapemateVersion = "v1.4.0"
 $PatchFile = Join-Path $Root "patches\scrapemate-v1.4.0-windows-no-single-process.patch"
 
+# Pinned to the version already installed in bin/go (bin/go/VERSION, first line),
+# so a rebuild on a machine without bin/go yet doesn't silently fetch a newer Go
+# than the one this project has been built and tested against.
+$GoVersion = "go1.27.1"
+
 New-Item -ItemType Directory -Force $Bin | Out-Null
 $Src = Join-Path $Bin "src"
 New-Item -ItemType Directory -Force $Src | Out-Null
@@ -15,9 +20,7 @@ New-Item -ItemType Directory -Force $Src | Out-Null
 $GoRoot = Join-Path $Bin "go"
 $GoExe = Join-Path $GoRoot "bin\go.exe"
 if (-not (Test-Path $GoExe)) {
-    Write-Host "Fetching latest stable Go version ..."
-    $GoVersion = (Invoke-WebRequest "https://go.dev/VERSION?m=text" -UseBasicParsing).Content -split "`n" | Select-Object -First 1
-    $GoVersion = $GoVersion.Trim()
+    Write-Host "Fetching pinned Go version $GoVersion ..."
     $GoZipUrl = "https://go.dev/dl/$GoVersion.windows-amd64.zip"
     $GoZip = Join-Path $Bin "$GoVersion.windows-amd64.zip"
     Write-Host "Downloading $GoZipUrl ..."

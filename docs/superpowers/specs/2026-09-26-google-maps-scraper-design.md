@@ -38,8 +38,10 @@ gmaps/
   export.py      CSV export with filters + export log
   cli.py         `gmaps run | queue add | export | status`
 supabase/migrations/   SQL for all tables and views
-bin/                   pinned gosom Windows binary (gitignored, fetched by setup script)
-scripts/setup.ps1      download gosom at the pinned version, create venv, register scheduled task
+bin/                   pinned gosom binary (gitignored), built from source by scripts/build-gosom.ps1
+                        against a patched scrapemate (see README.md for why)
+scripts/setup.ps1      build gosom from source at the pinned version, create venv
+scripts/register-task.ps1  register the nightly Windows scheduled task
 tests/                 pytest, using saved gosom output fixtures
 ```
 
@@ -72,6 +74,7 @@ RLS is enabled on every table with no policies. Only the service/secret key (use
 
 ## Run flow
 
+0. **Single instance.** `gmaps run` takes a non-blocking file lock (`tmp/run.lock`) before anything else. If another run already holds it, this run logs "another gmaps run is active" and exits immediately (code 0) instead of racing the same queue. The lock is held for the whole run and released when it ends. Leftover `tmp/gosom_*` work directories from a previous crashed/killed run are swept (deleted) once the lock is held.
 1. **Trigger.** Windows Task Scheduler runs `gmaps run --scheduled` nightly at 01:00, with "run as soon as possible after a missed start" enabled. The limit comes from `settings.nightly_limit`. Manual runs use `gmaps run --limit N` or `gmaps run --all`. A `runs` row is inserted with status `running`.
 2. **Recover.** Any `search_queue` rows still `running` from a previous crashed run go back to `pending`.
 3. **Pick.** Take the oldest `pending` search and mark it `running` with this `run_id`.
@@ -83,9 +86,10 @@ RLS is enabled on every table with no policies. Only the service/secret key (use
 8. **Close.** The search is marked `done` or `failed` with counts and error, and the run row gets its totals and `finished_at`.
 
 **Failure handling**
-- gosom exits non-zero, or a search yields 0 results with error output: mark the search `failed` with stderr excerpt, continue with the next search.
+- gosom exits non-zero, or a search yields 0 results (with or without error output — an empty result is always treated as a failure): mark the search `failed` with the stderr excerpt, or `"exit <code>"`, or `"0 results"` if there's neither, and continue with the next search. The search body (scrape, normalize, find emails, upsert, close) is wrapped so any exception there (e.g. a transient DB write failure) also just fails that one search instead of aborting the run; only a failure in claiming the next search (queue/DB itself unreachable) fails the whole run.
 - If 3 searches in a row fail, the run stops early with `notes = "possible proxy block"`, so a burned proxy set doesn't waste the whole night.
 - A crash or sleep mid-run is recovered by step 2 on the next run. Places already upserted stay saved.
+- Failed searches are not retried automatically; re-queue them with `gmaps queue add ...` (a `failed` search doesn't block that query from being queued again, unlike a recent `done` one).
 
 ## Adding searches
 
