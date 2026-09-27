@@ -71,9 +71,10 @@ def test_find_emails_follows_contact_link_and_cleans_junk():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/":
             html = '<a href="https://acme.com/contact-us-now">Contact</a>'
-            return httpx.Response(200, text=html)
+            return httpx.Response(200, text=html, headers={"content-type": "text/html"})
         if request.url.path == "/contact-us-now":
-            return httpx.Response(200, text="info@acme.com or joe@gmail.com")
+            return httpx.Response(200, text="info@acme.com or joe@gmail.com",
+                                   headers={"content-type": "text/html"})
         return httpx.Response(404)
 
     client = _make_client(handler)
@@ -95,6 +96,63 @@ def test_find_emails_homepage_raises_returns_empty():
 
     client = _make_client(handler)
     assert find_emails("https://unreachable.com", client) == []
+
+
+def test_find_emails_follows_cross_host_homepage_redirect():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "oldsite.com" and request.url.path == "/":
+            return httpx.Response(301, headers={"location": "https://newdomain.com/"})
+        if request.url.host == "newdomain.com" and request.url.path == "/":
+            return httpx.Response(200, text="info@newdomain.com", headers={"content-type": "text/html"})
+        return httpx.Response(404)
+
+    client = _make_client(handler)
+    result = find_emails("https://oldsite.com/", client)
+    assert result == ["info@newdomain.com"]
+
+
+def test_find_emails_skips_contact_page_that_redirects_to_other_host():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "acme.com" and request.url.path == "/":
+            html = '<a href="https://acme.com/contact">Contact</a>'
+            return httpx.Response(200, text=html, headers={"content-type": "text/html"})
+        if request.url.host == "acme.com" and request.url.path == "/contact":
+            return httpx.Response(302, headers={"location": "https://forms.thirdparty.com/x"})
+        if request.url.host == "forms.thirdparty.com":
+            return httpx.Response(200, text="leak@thirdparty.com", headers={"content-type": "text/html"})
+        return httpx.Response(404)
+
+    client = _make_client(handler)
+    result = find_emails("https://acme.com/", client)
+    assert result == []
+
+
+def test_contact_links_skips_binary_extensions():
+    html = (
+        '<a href="https://example.com/about.pdf">About PDF</a>'
+        '<a href="https://example.com/contact">Contact</a>'
+    )
+    links = contact_links(html, "https://example.com/")
+    assert "https://example.com/about.pdf" not in links
+    assert "https://example.com/contact" in links
+
+
+def test_find_emails_homepage_non_html_content_type_returns_empty():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"%PDF-1.4 email@acme.com", headers={"content-type": "application/pdf"})
+
+    client = _make_client(handler)
+    assert find_emails("https://acme.com/", client) == []
+
+
+def test_href_and_cfemail_accept_single_quotes():
+    html = "<a href='https://acme.com/contact'>Contact</a>"
+    links = contact_links(html, "https://acme.com/")
+    assert "https://acme.com/contact" in links
+
+    hex_value = _cf_encode("hi@acme.com", 0x42)
+    cf_html = f"<span data-cfemail='{hex_value}'>[email protected]</span>"
+    assert extract_emails(cf_html) == ["hi@acme.com"]
 
 
 def test_enrich_places_skips_no_website_and_existing_emails(monkeypatch):

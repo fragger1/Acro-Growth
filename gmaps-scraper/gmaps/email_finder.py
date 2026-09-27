@@ -8,16 +8,25 @@ import httpx
 from gmaps.emails import clean_emails, pick_primary
 
 EMAIL_CANDIDATE_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-CF_EMAIL_RE = re.compile(r'data-cfemail="([0-9a-fA-F]+)"')
-HREF_RE = re.compile(r'href="([^"]+)"', re.IGNORECASE)
+CF_EMAIL_RE = re.compile(r'''data-cfemail=["']([0-9a-fA-F]+)["']''')
+HREF_RE = re.compile(r'''href=["']([^"']+)["']''', re.IGNORECASE)
 CONTACT_PATH_RE = re.compile(r"contact|about|connect|wholesale|catering|info", re.IGNORECASE)
 CONTACT_FALLBACKS = ("/contact", "/contact-us", "/about")
+BINARY_EXTENSIONS = (
+    ".pdf", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".zip", ".mp4", ".doc", ".docx",
+)
 MAX_CONTACT_LINKS = 4
+MAX_BYTES = 2_000_000
+MAX_REDIRECTS = 5
 REQUEST_TIMEOUT = 10
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0.0.0 Safari/537.36"
 )
+
+
+def _site_host(url: str) -> str:
+    return (urlparse(url).netloc or "").lower().removeprefix("www.")
 
 
 def _decode_cf_email(hex_value: str) -> str | None:
@@ -50,6 +59,8 @@ def contact_links(html_text: str, base_url: str) -> list[str]:
         parsed = urlparse(absolute)
         if parsed.netloc != base_host:
             continue
+        if parsed.path.lower().endswith(BINARY_EXTENSIONS):
+            continue
         if not CONTACT_PATH_RE.search(parsed.path):
             continue
         if absolute not in links:
@@ -63,24 +74,47 @@ def contact_links(html_text: str, base_url: str) -> list[str]:
     return links
 
 
-def find_emails(website: str, client: httpx.Client) -> list[str]:
+def _fetch_html(client: httpx.Client, url: str) -> tuple[str, str] | None:
+    """GET url (redirects allowed), guarding against non-HTML content and oversized bodies.
+
+    Returns (html_text, final_url) on a 200 HTML-ish response, else None. Never raises.
+    """
     try:
-        response = client.get(website, follow_redirects=True, timeout=REQUEST_TIMEOUT)
-        response.raise_for_status()
+        with client.stream("GET", url, follow_redirects=True, timeout=REQUEST_TIMEOUT) as response:
+            if response.status_code != 200:
+                return None
+            content_type = response.headers.get("content-type", "")
+            if content_type and "html" not in content_type.lower():
+                return None
+            body = bytearray()
+            for chunk in response.iter_bytes():
+                body.extend(chunk)
+                if len(body) >= MAX_BYTES:
+                    break
+            encoding = response.encoding or "utf-8"
+            text = bytes(body).decode(encoding, errors="replace")
+            return text, str(response.url)
     except httpx.HTTPError:
+        return None
+
+
+def find_emails(website: str, client: httpx.Client) -> list[str]:
+    homepage = _fetch_html(client, website)
+    if homepage is None:
         return []
+    homepage_html, homepage_final_url = homepage
+    site_host = _site_host(homepage_final_url)
 
-    base_url = str(response.url)
-    candidates = list(extract_emails(response.text))
+    candidates = list(extract_emails(homepage_html))
 
-    for link in contact_links(response.text, base_url):
-        try:
-            page = client.get(link, timeout=REQUEST_TIMEOUT)
-        except httpx.HTTPError:
+    for link in contact_links(homepage_html, homepage_final_url):
+        page = _fetch_html(client, link)
+        if page is None:
             continue
-        if page.status_code != 200:
+        page_html, page_final_url = page
+        if _site_host(page_final_url) != site_host:
             continue
-        candidates.extend(extract_emails(page.text))
+        candidates.extend(extract_emails(page_html))
 
     return clean_emails(candidates)
 
@@ -90,7 +124,7 @@ def enrich_places(places: list[dict], max_workers: int = 8) -> None:
     if not targets:
         return
 
-    with httpx.Client(follow_redirects=True, timeout=REQUEST_TIMEOUT,
+    with httpx.Client(follow_redirects=True, timeout=REQUEST_TIMEOUT, max_redirects=MAX_REDIRECTS,
                        headers={"User-Agent": USER_AGENT}) as client:
         def process(place: dict) -> None:
             try:
