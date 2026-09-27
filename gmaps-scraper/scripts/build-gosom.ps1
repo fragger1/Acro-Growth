@@ -33,13 +33,32 @@ if (-not (Test-Path $GoExe)) { throw "Portable Go extraction failed: $GoExe not 
 $GosomSrc = Join-Path $Src "gosom"
 $ScrapemateSrc = Join-Path $Src "scrapemate"
 
-if (-not (Test-Path $GosomSrc)) {
-    Write-Host "Cloning google-maps-scraper $GosomVersion ..."
-    git clone --depth 1 --branch $GosomVersion https://github.com/gosom/google-maps-scraper.git $GosomSrc
+# A directory only counts as "already cloned" if it actually contains the
+# expected source (not just an empty/partial dir left by an interrupted or
+# failed clone), so a prior failure doesn't get skipped forever.
+function Test-ValidClone($Dir, $MarkerRelPath) {
+    return (Test-Path $Dir) -and (Test-Path (Join-Path $Dir $MarkerRelPath))
 }
-if (-not (Test-Path $ScrapemateSrc)) {
+
+function Invoke-GitClone($Branch, $Url, $Dest) {
+    if (Test-Path $Dest) {
+        Write-Host "Removing incomplete clone at $Dest ..."
+        Remove-Item -Recurse -Force $Dest
+    }
+    git clone --depth 1 --branch $Branch $Url $Dest
+    if ($LASTEXITCODE -ne 0) {
+        if (Test-Path $Dest) { Remove-Item -Recurse -Force $Dest }
+        throw "git clone of $Url (branch $Branch) failed with exit code $LASTEXITCODE."
+    }
+}
+
+if (-not (Test-ValidClone $GosomSrc "go.mod")) {
+    Write-Host "Cloning google-maps-scraper $GosomVersion ..."
+    Invoke-GitClone $GosomVersion "https://github.com/gosom/google-maps-scraper.git" $GosomSrc
+}
+if (-not (Test-ValidClone $ScrapemateSrc "adapters\fetchers\jshttp\jshttp.go")) {
     Write-Host "Cloning scrapemate $ScrapemateVersion ..."
-    git clone --depth 1 --branch $ScrapemateVersion https://github.com/gosom/scrapemate.git $ScrapemateSrc
+    Invoke-GitClone $ScrapemateVersion "https://github.com/gosom/scrapemate.git" $ScrapemateSrc
 }
 
 # --- 3. Apply the Windows --single-process patch (skip if already applied) ---
@@ -76,6 +95,16 @@ Push-Location $GosomSrc
 try {
     Write-Host "Wiring go.mod to the local patched scrapemate ..."
     & $GoExe mod edit -replace "github.com/gosom/scrapemate=../scrapemate"
+    if ($LASTEXITCODE -ne 0) { throw "go mod edit -replace failed with exit code $LASTEXITCODE." }
+
+    # A silent failure here (e.g. a bad go.mod, permissions) would otherwise build
+    # against the UNPATCHED scrapemate and still report success, reintroducing the
+    # Windows --single-process bug. Verify the replace directive actually landed.
+    $ModJson = (& $GoExe mod edit -json) -join "`n"
+    if ($LASTEXITCODE -ne 0) { throw "go mod edit -json failed with exit code $LASTEXITCODE." }
+    if ($ModJson -notmatch [regex]::Escape("../scrapemate")) {
+        throw "go.mod replace directive for scrapemate is missing after 'go mod edit -replace' (would build against the unpatched scrapemate)."
+    }
 
     Write-Host "Building google-maps-scraper.exe (this can take a few minutes the first time) ..."
     # `go build .` alone resolves only the main package's own dependency graph
