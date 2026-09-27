@@ -2,7 +2,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from gmaps.config import Config
-from gmaps.scraper import build_command, depth_for_limit, parse_results, redact
+from gmaps.scraper import build_command, depth_for_limit, parse_results, redact, sweep_tmp
 
 
 def test_depth_for_limit():
@@ -117,3 +117,25 @@ def test_gosom_scraper_integration():
 
         # Verify temp working directory was cleaned up after the call
         assert not Path(captured["cwd"]).exists()
+
+
+def test_sweep_tmp_removes_leftover_gosom_dirs(tmp_path):
+    tmp_dir = tmp_path / "tmp"
+    tmp_dir.mkdir()
+    leftover = tmp_dir / "gosom_abc123"
+    leftover.mkdir()
+    (leftover / "proxies.txt").write_text("secret", encoding="utf-8")
+    keep = tmp_dir / "run.lock"
+    keep.write_text("", encoding="utf-8")
+    other_dir = tmp_dir / "not_gosom"
+    other_dir.mkdir()
+
+    sweep_tmp(tmp_path)
+
+    assert not leftover.exists()
+    assert keep.exists()
+    assert other_dir.exists()
+
+
+def test_sweep_tmp_no_tmp_dir_is_a_no_op(tmp_path):
+    sweep_tmp(tmp_path)  # should not raise even if tmp/ doesn't exist

@@ -33,6 +33,17 @@ class ScrapeResult:
     stderr_tail: str
 
 
+def sweep_tmp(root: Path) -> None:
+    """Delete leftover gosom_* work directories from a previous crashed/killed
+    run (they can contain a proxies.txt, which is never read or logged here)."""
+    tmp_dir = root / "tmp"
+    if not tmp_dir.exists():
+        return
+    for entry in tmp_dir.iterdir():
+        if entry.is_dir() and entry.name.startswith("gosom_"):
+            shutil.rmtree(entry, ignore_errors=True)
+
+
 def depth_for_limit(limit: int | None, default_depth: int) -> int:
     if limit is None:
         return default_depth
