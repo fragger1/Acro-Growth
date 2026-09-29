@@ -139,3 +139,69 @@ def test_sweep_tmp_removes_leftover_gosom_dirs(tmp_path):
 
 def test_sweep_tmp_no_tmp_dir_is_a_no_op(tmp_path):
     sweep_tmp(tmp_path)  # should not raise even if tmp/ doesn't exist
+
+
+class _RecordingPopen:
+    """Fake gosom: records the proxies file it was given, emits the given stderr."""
+
+    calls: list = []
+    stderr_template = ""
+
+    def __init__(self, cmd, **kwargs):
+        self.pid = 1
+        self.returncode = 0
+        proxies_file = Path(cmd[cmd.index("-proxies-file") + 1]) if "-proxies-file" in cmd else None
+        proxies = proxies_file.read_text(encoding="utf-8").split() if proxies_file else []
+        _RecordingPopen.calls.append(proxies)
+        self.results_file = Path(cmd[cmd.index("-results") + 1])
+
+    def communicate(self, timeout=None):
+        self.results_file.write_text('{"place_id": "p1"}\n', encoding="utf-8")
+        chosen = _RecordingPopen.calls[-1]
+        host = chosen[0].split("@")[1] if chosen else ""
+        return "", _RecordingPopen.stderr_template.format(host=host)
+
+
+def _cfg(n):
+    return Config(supabase_url="x", supabase_key="y",
+                  proxies=[f"http://u:pw@10.0.0.{i}:80{i:02d}" for i in range(1, n + 1)],
+                  gosom_path=Path("g.exe"))
+
+
+def test_scraper_gives_each_search_a_random_subset_and_benches_failures(tmp_path):
+    import random
+
+    from gmaps.proxies import ProxyHealth, proxy_key
+    from gmaps.scraper import GosomScraper
+
+    _RecordingPopen.calls = []
+    _RecordingPopen.stderr_template = "[AuthProxy] Failed to connect to upstream: dial tcp {host}: timeout"
+    health = ProxyHealth(tmp_path / "health.json")
+    cfg = _cfg(20)
+    with patch("gmaps.scraper.subprocess.Popen", _RecordingPopen):
+        scraper = GosomScraper(cfg, concurrency=3, health=health, proxies_per_search=5, rng=random.Random(3))
+        result = scraper("q", depth=2)
+        scraper("q2", depth=2)
+
+    first, second = _RecordingPopen.calls
+    assert len(first) == 5 and set(first) <= set(cfg.proxies)
+    assert first != second
+    failed = proxy_key(first[0])
+    assert failed in ProxyHealth(tmp_path / "health.json").benched()
+    assert "pw" not in result.stderr_tail
+
+
+def test_scraper_without_healthy_proxies_fails_without_running_gosom(tmp_path):
+    from gmaps.proxies import MAX_STRIKES, ProxyHealth, proxy_key
+    from gmaps.scraper import GosomScraper
+
+    _RecordingPopen.calls = []
+    cfg = _cfg(2)
+    health = ProxyHealth(tmp_path / "health.json")
+    for _ in range(MAX_STRIKES):
+        health.record_failures({proxy_key(p) for p in cfg.proxies})
+    with patch("gmaps.scraper.subprocess.Popen", _RecordingPopen):
+        result = GosomScraper(cfg, concurrency=3, health=health)("q", depth=2)
+    assert _RecordingPopen.calls == []
+    assert result.entries == [] and result.returncode != 0
+    assert "no healthy proxies" in result.stderr_tail

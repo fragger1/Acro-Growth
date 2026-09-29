@@ -16,12 +16,13 @@ class RunStats:
 
 
 def run(db, scrape, *, trigger: str, limit: int | None, default_depth: int, log=print,
-        find_emails=None) -> RunStats:
+        find_emails=None, pause=None) -> RunStats:
     db.reset_stale()
     run_id = db.create_run(trigger, limit)
     stats = RunStats()
     status, notes = "done", None
     bad_streak = 0
+    first = True
     try:
         while True:
             if limit is not None and stats.places_new >= limit:
@@ -33,6 +34,9 @@ def run(db, scrape, *, trigger: str, limit: int | None, default_depth: int, log=
             search = db.claim_next_search(run_id)
             if search is None:
                 break
+            if pause is not None and not first:
+                pause()
+            first = False
             place_limit = search.get("place_limit")
             log(f"[run {run_id}] scraping: {search['query']} (client={search['client']})")
             try:

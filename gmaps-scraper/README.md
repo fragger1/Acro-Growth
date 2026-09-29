@@ -49,6 +49,19 @@ system-wide.
 Tunables live in the Supabase `settings` table: `nightly_limit` (null = unlimited), `concurrency`, `depth`.
 Logs: `logs/gmaps.log`. Exports: `exports/`.
 
+### Proxy rotation
+gosom's proxy pool always starts at the first proxy it's given, and we start one gosom per search, so
+passing the whole list would put every search on the same first few proxies. Instead:
+- each search gets **5 random healthy proxies** from `PROXIES_FILE`, spreading load across the whole list;
+- when gosom logs `Failed to connect to upstream: dial tcp IP:port`, that proxy gets a strike and is
+  **benched for 24h**; after **3 strikes** it is **retired** (state in `state/proxy_health.json`, IP:port only);
+- runs pause a random **5–20 s** between searches so traffic isn't bursty.
+
+`.venv\Scripts\gmaps proxies` lists benched and retired proxies; replace retired ones in the Webshare
+dashboard, then delete their entries from `state/proxy_health.json` (or the whole file) to reset.
+If every proxy is benched/retired, searches fail with "no healthy proxies available" and the run
+stops after 3 in a row — it never falls back to your own IP.
+
 Only one `gmaps run` can be active at a time (a file lock at `tmp/run.lock`); a second run started
 while one is in progress logs "another gmaps run is active" and exits immediately without error.
 

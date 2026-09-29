@@ -149,3 +149,11 @@ def test_search_level_exception_isolated_run_still_done():
     assert stats.failed_searches == 1
     assert stats.searches_done == 1
     assert db.runs[1]["status"] == "done"
+
+
+def test_pause_runs_between_searches_but_not_before_the_first():
+    db = FakeDb([search(1), search(2), search(3)])
+    scraper = ScriptedScraper([ok(entry("a")), ok(entry("b")), ok(entry("c"))])
+    pauses = []
+    run(db, scraper, trigger="manual", limit=None, default_depth=12, log=quiet, pause=lambda: pauses.append(1))
+    assert len(pauses) == 2

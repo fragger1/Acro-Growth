@@ -1,6 +1,7 @@
 import json
 import math
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -10,7 +11,9 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from gmaps.config import ROOT, Config
+from gmaps.proxies import ProxyHealth, failed_hosts, proxy_key
 
+PROXIES_PER_SEARCH = 5
 RESULTS_PER_SCROLL = 8
 TIMEOUT_SECONDS = 60 * 60
 CREDENTIALS_RE = re.compile(r"(://)[^/\s:@]+:[^/\s@]+@")
@@ -91,11 +94,23 @@ def parse_results(text: str) -> list[dict]:
 
 
 class GosomScraper:
-    def __init__(self, cfg: Config, concurrency: int):
+    def __init__(self, cfg: Config, concurrency: int, *, health: ProxyHealth | None = None,
+                 proxies_per_search: int = PROXIES_PER_SEARCH, rng: random.Random | None = None):
         self.cfg = cfg
         self.concurrency = concurrency
+        self.health = health
+        self.proxies_per_search = proxies_per_search
+        self.rng = rng or random.Random()
+
+    def _choose_proxies(self) -> list[str]:
+        if self.health is not None:
+            return self.health.pick(self.cfg.proxies, self.proxies_per_search, rng=self.rng)
+        return self.rng.sample(self.cfg.proxies, min(self.proxies_per_search, len(self.cfg.proxies)))
 
     def __call__(self, query: str, depth: int) -> ScrapeResult:
+        chosen = self._choose_proxies() if self.cfg.proxies else []
+        if self.cfg.proxies and not chosen:
+            return ScrapeResult([], -1, "no healthy proxies available (all benched or retired)")
         (ROOT / "tmp").mkdir(exist_ok=True)
         work = Path(tempfile.mkdtemp(prefix="gosom_", dir=ROOT / "tmp"))
         try:
@@ -103,9 +118,9 @@ class GosomScraper:
             results_file = work / "results.json"
             input_file.write_text(query + "\n", encoding="utf-8")
             proxies_file = None
-            if self.cfg.proxies:
+            if chosen:
                 proxies_file = work / "proxies.txt"
-                proxies_file.write_text("\n".join(self.cfg.proxies) + "\n", encoding="utf-8")
+                proxies_file.write_text("\n".join(chosen) + "\n", encoding="utf-8")
             cmd = build_command(
                 self.cfg.gosom_path, input_file, results_file, proxies_file, self.concurrency, depth
             )
@@ -129,6 +144,8 @@ class GosomScraper:
                 returncode = -1
                 stderr = str(e)
 
+            if self.health is not None and chosen:
+                self.health.record_failures(failed_hosts(stderr, {proxy_key(p) for p in chosen}))
             stderr = redact(stderr, self.cfg.proxies)
             text = results_file.read_text(encoding="utf-8", errors="replace") if results_file.exists() else ""
             return ScrapeResult(parse_results(text), returncode, stderr[-2000:])
