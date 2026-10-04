@@ -110,6 +110,20 @@ def test_find_emails_called_before_upsert_and_stats_reflect_enrichment():
     assert db.places[("a", "me")]["primary_email"] == "info@a.com"
 
 
+def test_find_emails_skips_places_already_in_db():
+    # "a" was saved by an earlier search for another client; only "b" is unseen.
+    db = FakeDb([search(1, client="jeff")])
+    db.places[("a", "me")] = {"place_id": "a", "primary_email": "info@a.com"}
+    scraper = ScriptedScraper([ok(entry("a"), entry("b"))])
+    calls = []
+
+    stats = run(db, scraper, trigger="manual", limit=None, default_depth=12, log=quiet,
+                find_emails=lambda places: calls.append([p["place_id"] for p in places]))
+
+    assert calls == [["b"]]
+    assert stats.places_scraped == 2 and stats.places_new == 2
+
+
 def test_exception_marks_run_failed_and_reraises():
     """A run-level (DB) failure, not a per-search one, still fails the whole run
     and reraises. claim_next_search sits outside the per-search try/except."""

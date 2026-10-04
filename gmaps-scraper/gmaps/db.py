@@ -77,6 +77,15 @@ class Db:
         return len(self.c.table("search_queue").insert(rows).execute().data)
 
     # places
+    def known_place_ids(self, place_ids: list[str]) -> set[str]:
+        known: set[str] = set()
+        for i in range(0, len(place_ids), 100):
+            rows = (
+                self.c.table("places").select("place_id").in_("place_id", place_ids[i : i + 100]).execute().data
+            )
+            known.update(r["place_id"] for r in rows)
+        return known
+
     def upsert_places(self, places: list[dict], client: str, search_id: int) -> int:
         new = 0
         for i in range(0, len(places), UPSERT_CHUNK):

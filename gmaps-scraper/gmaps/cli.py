@@ -7,7 +7,7 @@ from logging.handlers import RotatingFileHandler
 from gmaps.config import ROOT, load_config
 
 PROXY_HEALTH_PATH = ("state", "proxy_health.json")
-PAUSE_SECONDS = (5, 20)
+PAUSE_SECONDS = (2, 6)
 
 
 def _setup_logging() -> logging.Logger:

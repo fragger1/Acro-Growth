@@ -55,7 +55,7 @@ passing the whole list would put every search on the same first few proxies. Ins
 - each search gets **5 random healthy proxies** from `PROXIES_FILE`, spreading load across the whole list;
 - when gosom logs `Failed to connect to upstream: dial tcp IP:port`, that proxy gets a strike and is
   **benched for 24h**; after **3 strikes** it is **retired** (state in `state/proxy_health.json`, IP:port only);
-- runs pause a random **5–20 s** between searches so traffic isn't bursty.
+- runs pause a random **2–6 s** between searches so traffic isn't bursty.
 
 `.venv\Scripts\gmaps proxies` lists benched and retired proxies; replace retired ones in the Webshare
 dashboard, then delete their entries from `state/proxy_health.json` (or the whole file) to reset.

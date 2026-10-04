@@ -46,7 +46,10 @@ def run(db, scrape, *, trigger: str, limit: int | None, default_depth: int, log=
                     places = places[:place_limit]
 
                 if find_emails is not None and places:
-                    find_emails(places)
+                    # Places already in the db had their websites checked when first saved, and the
+                    # upsert keeps their stored emails, so only look up emails for unseen places.
+                    known = db.known_place_ids([p["place_id"] for p in places])
+                    find_emails([p for p in places if p["place_id"] not in known])
 
                 if not places:
                     rc = result.returncode
