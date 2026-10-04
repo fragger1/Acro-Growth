@@ -90,10 +90,13 @@ def cmd_queue_add(args, db, cfg, log):
 def cmd_export(args, db, cfg, log):
     from gmaps.export import export_leads
 
-    path, count = export_leads(db, args.client, since=args.since, keyword=args.search,
-                               include_no_email=args.include_no_email, new_only=args.new_only,
-                               out_dir=ROOT / "exports")
+    path, count, skipped = export_leads(db, args.client, since=args.since, keyword=args.search,
+                                        include_no_email=args.include_no_email, new_only=args.new_only,
+                                        any_category=args.any_category, out_dir=ROOT / "exports")
     log.info(f"exported {count} leads to {path}" if path else "no leads matched; nothing exported")
+    if skipped:
+        top = ", ".join(f"{category} {n}" for category, n in skipped.most_common(15))
+        log.info(f"skipped {sum(skipped.values())} off-target leads (use --any-category to include): {top}")
 
 
 def cmd_status(args, db, cfg, log):
@@ -144,6 +147,8 @@ def _build_export_parser(sub):
     p_export.add_argument("--search", help="keyword filter (ILIKE pattern, e.g. dentist%%)")
     p_export.add_argument("--include-no-email", action="store_true")
     p_export.add_argument("--new-only", action="store_true", help="skip leads already exported to this client")
+    p_export.add_argument("--any-category", action="store_true",
+                          help="include leads whose Maps category matches none of the client's searches")
     p_export.set_defaults(func=cmd_export)
     return p_export
 

@@ -46,6 +46,13 @@ system-wide.
 .venv\Scripts\gmaps export --client jeff --new-only
 .venv\Scripts\gmaps status
 ```
+Exports leave out off-target places. Maps pads a search with loosely related places once it runs out
+of real matches (a "machine shop" search returns crypto ATMs and gas stations), so a lead is exported
+only when its primary Maps category contains one of the client's searched keywords, or matches an
+extra `ILIKE` pattern in the Supabase `keyword_categories` table for one of those keywords (e.g.
+`plumbing contractor` → `Plumber`). The export logs the categories it skipped; add a pattern row to
+keep one, or pass `--any-category` to include everything. Skipped leads aren't marked exported.
+
 Tunables live in the Supabase `settings` table: `nightly_limit` (null = unlimited), `concurrency`, `depth`.
 Logs: `logs/gmaps.log`. Exports: `exports/`.
 
