@@ -16,12 +16,13 @@ class RunStats:
 
 
 def run(db, scrape, *, trigger: str, limit: int | None, default_depth: int, log=print,
-        find_emails=None) -> RunStats:
+        find_emails=None, pause=None) -> RunStats:
     db.reset_stale()
     run_id = db.create_run(trigger, limit)
     stats = RunStats()
     status, notes = "done", None
     bad_streak = 0
+    first = True
     try:
         while True:
             if limit is not None and stats.places_new >= limit:
@@ -33,6 +34,9 @@ def run(db, scrape, *, trigger: str, limit: int | None, default_depth: int, log=
             search = db.claim_next_search(run_id)
             if search is None:
                 break
+            if pause is not None and not first:
+                pause()
+            first = False
             place_limit = search.get("place_limit")
             log(f"[run {run_id}] scraping: {search['query']} (client={search['client']})")
             try:
@@ -42,7 +46,10 @@ def run(db, scrape, *, trigger: str, limit: int | None, default_depth: int, log=
                     places = places[:place_limit]
 
                 if find_emails is not None and places:
-                    find_emails(places)
+                    # Places already in the db had their websites checked when first saved, and the
+                    # upsert keeps their stored emails, so only look up emails for unseen places.
+                    known = db.known_place_ids([p["place_id"] for p in places])
+                    find_emails([p for p in places if p["place_id"] not in known])
 
                 if not places:
                     rc = result.returncode

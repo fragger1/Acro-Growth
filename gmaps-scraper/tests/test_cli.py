@@ -109,7 +109,7 @@ def test_cmd_run_rejects_negative_nightly_limit(tmp_path, monkeypatch):
 def test_cmd_run_logs_unlimited_only_when_limit_is_none(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "ROOT", tmp_path)
     monkeypatch.setattr("gmaps.runner.run", lambda *a, **k: "stats")
-    monkeypatch.setattr("gmaps.scraper.GosomScraper", lambda cfg, concurrency: None)
+    monkeypatch.setattr("gmaps.scraper.GosomScraper", lambda cfg, concurrency, **kw: None)
 
     args = argparse.Namespace(all=True, limit=None, scheduled=False)
     log = _FakeLog()

@@ -1,0 +1,303 @@
+-- Keep off-target places out of exports. A Maps search pads its results with loosely related
+-- places once it runs out of real matches (a "machine shop" search returns crypto ATMs and gas
+-- stations), so leads_for_export now flags each lead with category_match.
+--
+-- A place matches when any of its categories contains one of the client's searched keywords
+-- (case-insensitive), or matches an extra ILIKE pattern listed below for one of those keywords.
+-- The extras cover Google category names that differ from the search term ("Plumber" for
+-- "plumbing contractor") and close neighbours worth keeping.
+
+create table public.keyword_categories (
+  keyword text not null,
+  pattern text not null,
+  primary key (keyword, pattern)
+);
+alter table public.keyword_categories enable row level security;
+grant select, insert, delete on table public.keyword_categories to service_role;
+
+insert into public.keyword_categories (keyword, pattern) values
+  ('assisted living facility', 'Retirement community'),
+  ('assisted living facility', 'Retirement home'),
+  ('assisted living facility', 'Senior citizen center'),
+  ('assisted living facility', 'Adult day care center'),
+  ('nursing home', 'Rehabilitation center'),
+  ('nursing home', 'Hospice'),
+  ('nursing home', 'Retirement%'),
+  ('nursing home', 'Skilled nursing%'),
+  ('auto repair shop', 'Car repair and maintenance service'),
+  ('auto repair shop', 'Mechanic'),
+  ('auto repair shop', 'Auto dent removal service'),
+  ('auto repair shop', 'Auto painting'),
+  ('auto repair shop', 'Auto glass shop'),
+  ('auto repair shop', 'Car detailing service'),
+  ('auto repair shop', 'Muffler shop'),
+  ('auto repair shop', 'Brake shop'),
+  ('auto repair shop', 'Transmission shop'),
+  ('auto repair shop', 'Oil change service'),
+  ('auto repair shop', 'Auto upholsterer'),
+  ('auto repair shop', 'Diesel engine repair service'),
+  ('auto repair shop', 'Engine rebuilding service'),
+  ('auto repair shop', 'Auto electrical service'),
+  ('auto repair shop', 'Auto radiator repair service'),
+  ('auto repair shop', 'Wheel alignment service'),
+  ('boat dealer', 'Boat repair shop'),
+  ('boat dealer', 'Marina'),
+  ('boat dealer', 'Boat builders'),
+  ('car dealership', '%dealer'),
+  ('church', 'Place of worship'),
+  ('church', 'Religious organi%'),
+  ('church', 'Religious institution'),
+  ('church', 'Jehovah%Kingdom Hall'),
+  ('commercial printer', 'Print shop'),
+  ('commercial printer', 'Screen print%'),
+  ('commercial printer', 'Digital printing service'),
+  ('commercial printer', 'Copy shop'),
+  ('commercial printer', 'Custom label printer'),
+  ('commercial printer', 'Printing equipment supplier'),
+  ('farm equipment dealer', 'Farm equipment supplier'),
+  ('farm equipment dealer', 'Farm equipment repair service'),
+  ('farm equipment dealer', 'Construction equipment supplier'),
+  ('farm equipment dealer', 'Construction machine dealer'),
+  ('farm equipment dealer', 'Lawn mower store'),
+  ('farm equipment dealer', 'Equipment rental agency'),
+  ('farm equipment dealer', 'Animal feed store'),
+  ('food manufacturer', 'Food products supplier'),
+  ('food manufacturer', 'Food producer'),
+  ('food manufacturer', 'Food processing company'),
+  ('food manufacturer', 'Meat processor'),
+  ('food manufacturer', 'Meat packer'),
+  ('food manufacturer', 'Butcher shop'),
+  ('food manufacturer', 'Wholesale bakery'),
+  ('food manufacturer', 'Winery'),
+  ('food manufacturer', 'Catering food and drink supplier'),
+  ('food manufacturer', 'Food manufacturing supply'),
+  ('funeral home', 'Cemetery'),
+  ('funeral home', 'Cremation service'),
+  ('funeral home', 'Funeral director'),
+  ('industrial equipment supplier', '%equipment supplier'),
+  ('industrial equipment supplier', 'Equipment rental agency'),
+  ('industrial equipment supplier', 'Welding supply store'),
+  ('industrial equipment supplier', 'Electrical supply store'),
+  ('industrial equipment supplier', 'Plumbing supply store'),
+  ('industrial equipment supplier', 'Propane supplier'),
+  ('industrial equipment supplier', 'Hydraulic%'),
+  ('industrial equipment supplier', 'Industrial%'),
+  ('machine shop', 'Tool & die shop'),
+  ('machine shop', 'Mold maker'),
+  ('machine shop', 'Electric motor repair shop'),
+  ('manufacturer', '%manufacturing%'),
+  ('manufacturer', 'Furniture maker'),
+  ('metal fabricator', '%fabricat%'),
+  ('metal fabricator', 'Metal supplier'),
+  ('metal fabricator', 'Metal construction company'),
+  ('metal fabricator', 'Steel%'),
+  ('metal fabricator', 'Metal finisher'),
+  ('motorcycle dealer', 'Motorcycle%'),
+  ('motorcycle dealer', 'ATV%'),
+  ('motorcycle dealer', 'Powersports%'),
+  ('motorcycle dealer', 'Motorsports store'),
+  ('plastic fabrication company', 'Plastic%'),
+  ('plastic fabrication company', 'Packaging company'),
+  ('private school', 'High school'),
+  ('private school', 'Elementary school'),
+  ('private school', 'Middle school'),
+  ('private school', 'Primary school'),
+  ('private school', 'Secondary school'),
+  ('private school', 'Private educational institution'),
+  ('private school', 'Religious school'),
+  ('private school', 'Catholic school'),
+  ('private school', 'Christian school'),
+  ('private school', 'Parochial school'),
+  ('private school', 'Preparatory school'),
+  ('private school', 'General education school'),
+  ('private school', 'Special education school'),
+  ('private school', 'K-12 school'),
+  ('private school', 'Combined primary and secondary school'),
+  ('private school', 'Boys'' high school'),
+  ('private school', 'Girls'' high school'),
+  ('private school', 'Military school'),
+  ('private school', 'Preschool'),
+  ('private school', 'Pre-school'),
+  ('private school', 'Kindergarten'),
+  ('property management company', 'Real estate rental agency'),
+  ('property management company', 'Apartment rental agency'),
+  ('property management company', 'Real estate developer'),
+  ('property management company', 'Townhouse complex'),
+  ('property management company', 'Apartment building'),
+  ('property management company', 'Condominium complex'),
+  ('commercial real estate company', 'Commercial real estate%'),
+  ('commercial real estate company', 'Real estate developer'),
+  ('commercial real estate company', 'Office space rental agency'),
+  ('apartment complex', 'Apartment building'),
+  ('apartment complex', 'Townhouse complex'),
+  ('apartment complex', 'Condominium complex'),
+  ('apartment complex', 'Apartment rental agency'),
+  ('self storage facility', '%storage facility'),
+  ('self storage facility', 'Self%storage%'),
+  ('trucking company', 'Trucking%'),
+  ('trucking company', 'Freight%'),
+  ('trucking company', 'Logistics service'),
+  ('trucking company', 'Moving and storage service'),
+  ('warehouse', 'Warehouse%'),
+  ('warehouse', 'Distribution service'),
+  ('warehouse', 'Logistics service'),
+  ('warehouse', 'Freight forwarding service'),
+  ('warehouse', '%storage facility'),
+  ('lumber yard', 'Lumber%'),
+  ('lumber yard', 'Sawmill'),
+  ('lumber yard', 'Wood supplier'),
+  ('lumber yard', 'Building materials%'),
+  ('rv dealer', 'RV%'),
+  ('rv dealer', 'Recreational vehicle%'),
+  ('trailer dealer', 'Trailer%'),
+  ('truck dealer', 'Truck%'),
+  ('event venue', 'Banquet hall'),
+  ('event venue', 'Wedding venue'),
+  ('event venue', 'Event%'),
+  ('event venue', 'Conference center'),
+  ('event venue', 'Community center'),
+  ('event venue', 'Live music venue'),
+  ('animal shelter', 'Animal rescue service'),
+  ('animal shelter', 'Humane society'),
+  ('animal shelter', 'Animal control service'),
+  ('animal shelter', 'Pet adoption service'),
+  ('towing company', 'Towing%'),
+  ('welding shop', 'Welder'),
+  ('welding shop', 'Welding%'),
+  ('cabinet maker', 'Cabinet%'),
+  ('cabinet maker', 'Woodworker'),
+  ('cabinet maker', 'Woodworking%'),
+  ('cabinet maker', 'Millwork shop'),
+  ('glass company', 'Glass%'),
+  ('hvac contractor', 'Heating contractor'),
+  ('hvac contractor', 'Air conditioning contractor'),
+  ('hvac contractor', 'Air conditioning repair service'),
+  ('hvac contractor', 'Furnace repair service'),
+  ('hvac contractor', 'Mechanical contractor'),
+  ('plumbing contractor', 'Plumber'),
+  ('plumbing contractor', 'Plumbing%'),
+  ('landscaping company', 'Landscaper'),
+  ('landscaping company', 'Landscape%'),
+  ('landscaping company', 'Lawn care service'),
+  ('landscaping company', 'Tree service'),
+  ('moving company', 'Mover'),
+  ('moving company', 'Moving%'),
+  ('wholesale distributor', 'Wholesaler'),
+  ('wholesale distributor', '%wholesaler'),
+  ('wholesale distributor', '%distributor'),
+  ('wholesale distributor', '%supplier'),
+  ('building materials supplier', 'Building materials store'),
+  ('building materials supplier', 'Roofing supply store'),
+  ('building materials supplier', 'Concrete product supplier'),
+  ('building materials supplier', 'Stone supplier'),
+  ('building materials supplier', 'Masonry supply store'),
+  ('brewery', 'Brewpub'),
+  ('indoor sports facility', 'Sports complex'),
+  ('indoor sports facility', 'Sports club'),
+  ('indoor sports facility', 'Recreation center'),
+  ('indoor sports facility', 'Gymnastics center'),
+  ('indoor sports facility', 'Batting cage center'),
+  ('indoor sports facility', 'Ice skating rink'),
+  ('indoor sports facility', 'Trampoline park'),
+  ('indoor sports facility', 'Indoor%'),
+  ('gym', 'Fitness%'),
+  ('gym', 'Health club'),
+  ('day care center', 'Child care agency'),
+  ('day care center', 'Preschool'),
+  ('day care center', 'Pre-school'),
+  ('day care center', 'Kindergarten'),
+  ('day care center', 'Nursery school'),
+  ('day care center', 'Montessori%'),
+  ('veterinary hospital', 'Veterinarian'),
+  ('veterinary hospital', 'Animal hospital'),
+  ('veterinary hospital', 'Emergency veterinarian service'),
+  ('veterinary hospital', 'Veterinary%'),
+  ('veterinary hospital', 'Pet boarding service'),
+  ('veterinary hospital', 'Kennel'),
+  ('hotel', 'Inn'),
+  ('hotel', 'Lodging'),
+  ('shopping center', 'Shopping mall'),
+  ('shopping center', 'Strip mall'),
+  ('shopping center', 'Outlet mall'),
+  ('medical office building', 'Medical center'),
+  ('medical office building', 'Medical office%'),
+  ('medical office building', 'Hospital'),
+  ('medical office building', 'General hospital'),
+  ('medical office building', 'Surgical center'),
+  ('powder coating service', 'Sandblasting service'),
+  ('powder coating service', 'Metal finisher'),
+  ('ready mix concrete supplier', 'Concrete product supplier'),
+  ('ready mix concrete supplier', 'Concrete factory'),
+  ('ready mix concrete supplier', 'Sand & gravel supplier'),
+  ('ready mix concrete supplier', 'Gravel%'),
+  ('ready mix concrete supplier', 'Quarry'),
+  ('recycling center', 'Recycling%'),
+  ('recycling center', 'Scrap metal dealer'),
+  ('recycling center', 'Junkyard'),
+  ('recycling center', 'Salvage yard'),
+  ('recycling center', 'Waste management service'),
+  ('food bank', 'Foodbank'),
+  ('food bank', 'Food pantry'),
+  ('food bank', 'Soup kitchen'),
+  ('vfw post', 'Veteran%'),
+  ('american legion post', 'Veteran%'),
+  ('elks lodge', 'Fraternal organization'),
+  ('elks lodge', 'Masonic%'),
+  ('elks lodge', 'Social club'),
+  ('mosque', 'Islamic%'),
+  ('synagogue', 'Jewish%'),
+  ('mobile home park', 'Mobile home%'),
+  ('mobile home park', 'Manufactured home%'),
+  ('homeowners association', 'Homeowners%'),
+  ('condominium association', 'Condominium%');
+
+-- The return type gains a column, so the function has to be dropped and recreated.
+drop function public.leads_for_export(text, timestamptz, text, boolean, boolean);
+
+create function public.leads_for_export(
+  p_client text,
+  p_since timestamptz default null,
+  p_keyword text default null,
+  p_include_no_email boolean default false,
+  p_new_only boolean default false
+)
+returns table (
+  place_id text, name text, category text, primary_email text, all_emails text, phone text,
+  website text, address text, city text, state text, postal_code text, rating numeric,
+  review_count int, maps_url text, category_match boolean
+)
+language sql
+stable
+set search_path = public
+as $$
+  with kw as (
+    select distinct lower(q.keyword) as keyword from search_queue q where q.client = p_client
+  ), pats as (
+    select '%' || kw.keyword || '%' as pattern from kw
+    union
+    select kc.pattern from keyword_categories kc join kw on kw.keyword = lower(kc.keyword)
+  )
+  select p.place_id, p.name, p.category, p.primary_email, array_to_string(p.emails, '; '),
+         p.phone, p.website, p.address, p.city, p.state, p.postal_code, p.rating,
+         p.review_count, p.maps_url,
+         exists (
+           select 1 from unnest(array_append(coalesce(p.categories, '{}'), p.category)) as c(name)
+           join pats on c.name ilike pats.pattern
+         )
+  from place_clients pc
+  join places p on p.place_id = pc.place_id
+  left join search_queue s on s.id = pc.search_id
+  where pc.client = p_client
+    and (p_since is null or pc.first_seen_at >= p_since)
+    and (p_keyword is null or s.keyword ilike p_keyword)
+    and (p_include_no_email or p.primary_email is not null)
+    and (not p_new_only or not exists (
+      select 1 from export_items ei join exports e on e.id = ei.export_id
+      where e.client = p_client and ei.place_id = p.place_id))
+  order by pc.first_seen_at, p.place_id;
+$$;
+
+revoke all on function public.leads_for_export(text, timestamptz, text, boolean, boolean)
+  from public, anon, authenticated;
+grant execute on function public.leads_for_export(text, timestamptz, text, boolean, boolean)
+  to service_role;

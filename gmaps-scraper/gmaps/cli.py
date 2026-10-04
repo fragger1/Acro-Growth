@@ -1,8 +1,13 @@
 import argparse
 import logging
+import random
+import time
 from logging.handlers import RotatingFileHandler
 
 from gmaps.config import ROOT, load_config
+
+PROXY_HEALTH_PATH = ("state", "proxy_health.json")
+PAUSE_SECONDS = (2, 6)
 
 
 def _setup_logging() -> logging.Logger:
@@ -38,6 +43,7 @@ def positive_int(value):
 def cmd_run(args, db, cfg, log):
     from gmaps.email_finder import enrich_places
     from gmaps.lock import LockBusyError, run_lock
+    from gmaps.proxies import ProxyHealth
     from gmaps.runner import run
     from gmaps.scraper import GosomScraper, sweep_tmp
 
@@ -58,10 +64,14 @@ def cmd_run(args, db, cfg, log):
                     raise SystemExit(1)
             concurrency = int(db.get_setting("concurrency", 3))
             depth = int(db.get_setting("depth", 12))
+            health = ProxyHealth(ROOT.joinpath(*PROXY_HEALTH_PATH))
             log.info(f"run start: limit={'unlimited' if limit is None else limit} concurrency={concurrency} "
-                     f"depth={depth} proxies={len(cfg.proxies)}")
-            stats = run(db, GosomScraper(cfg, concurrency), trigger="scheduled" if args.scheduled else "manual",
-                        limit=limit, default_depth=depth, log=log.info, find_emails=enrich_places)
+                     f"depth={depth} proxies={len(cfg.proxies)} benched={len(health.benched())} "
+                     f"retired={len(health.retired())}")
+            scraper = GosomScraper(cfg, concurrency, health=health)
+            stats = run(db, scraper, trigger="scheduled" if args.scheduled else "manual",
+                        limit=limit, default_depth=depth, log=log.info, find_emails=enrich_places,
+                        pause=lambda: time.sleep(random.uniform(*PAUSE_SECONDS)))
             log.info(f"run finished: {stats}")
     except LockBusyError:
         log.info("another gmaps run is active; exiting")
@@ -80,16 +90,31 @@ def cmd_queue_add(args, db, cfg, log):
 def cmd_export(args, db, cfg, log):
     from gmaps.export import export_leads
 
-    path, count = export_leads(db, args.client, since=args.since, keyword=args.search,
-                               include_no_email=args.include_no_email, new_only=args.new_only,
-                               out_dir=ROOT / "exports")
+    path, count, skipped = export_leads(db, args.client, since=args.since, keyword=args.search,
+                                        include_no_email=args.include_no_email, new_only=args.new_only,
+                                        any_category=args.any_category, out_dir=ROOT / "exports")
     log.info(f"exported {count} leads to {path}" if path else "no leads matched; nothing exported")
+    if skipped:
+        top = ", ".join(f"{category} {n}" for category, n in skipped.most_common(15))
+        log.info(f"skipped {sum(skipped.values())} off-target leads (use --any-category to include): {top}")
 
 
 def cmd_status(args, db, cfg, log):
     summary = db.status_summary()
     print("queue:", summary["queue"])
     print("last run:", summary["last_run"])
+
+
+def cmd_proxies(args, cfg, log):
+    from gmaps.proxies import ProxyHealth
+
+    health = ProxyHealth(ROOT.joinpath(*PROXY_HEALTH_PATH))
+    benched, retired = health.benched(), health.retired()
+    print(f"proxies configured: {len(cfg.proxies)}  benched (24h): {len(benched)}  retired: {len(retired)}")
+    for key in benched:
+        print(f"  benched: {key}")
+    for key in retired:
+        print(f"  retired (replace in Webshare): {key}")
 
 
 def _build_run_parser(sub):
@@ -122,6 +147,8 @@ def _build_export_parser(sub):
     p_export.add_argument("--search", help="keyword filter (ILIKE pattern, e.g. dentist%%)")
     p_export.add_argument("--include-no-email", action="store_true")
     p_export.add_argument("--new-only", action="store_true", help="skip leads already exported to this client")
+    p_export.add_argument("--any-category", action="store_true",
+                          help="include leads whose Maps category matches none of the client's searches")
     p_export.set_defaults(func=cmd_export)
     return p_export
 
@@ -140,10 +167,15 @@ def main(argv=None):
     _build_queue_parser(sub)
     _build_export_parser(sub)
     _build_status_parser(sub)
+    p_proxies = sub.add_parser("proxies", help="show benched/retired proxies (IP:port only)")
+    p_proxies.set_defaults(func=None, local=cmd_proxies)
 
     args = parser.parse_args(argv)
     log = _setup_logging()
     cfg = load_config()
+    if getattr(args, "local", None):
+        args.local(args, cfg, log)
+        return
     from gmaps.db import Db
 
     try:

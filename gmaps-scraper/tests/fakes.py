@@ -31,6 +31,10 @@ class FakeDb:
     def finish_search(self, search_id, status, found, new, error=None):
         self.finished_searches.append((search_id, status, found, new, error))
 
+    def known_place_ids(self, place_ids):
+        stored = {pid for pid, _client in self.places}
+        return {pid for pid in place_ids if pid in stored}
+
     def upsert_places(self, places, client, search_id):
         new = 0
         for p in places:
