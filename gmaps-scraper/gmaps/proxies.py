@@ -5,6 +5,8 @@ we start one gosom process per search, so handing it the full list means every
 search uses the same first few proxies. Instead each search gets a small random
 sample of healthy proxies, and proxies that gosom reports as failing are benched
 for BENCH_HOURS; after MAX_STRIKES failures a proxy is retired until replaced.
+Most failures are transient connect errors, so a proxy that goes STRIKE_RESET_HOURS
+past its last bench without failing again starts over with no strikes.
 """
 
 import json
@@ -14,8 +16,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
-BENCH_HOURS = 24
-MAX_STRIKES = 3
+BENCH_HOURS = 1
+MAX_STRIKES = 10
+STRIKE_RESET_HOURS = 24
 UPSTREAM_FAILURE_RE = re.compile(r"Failed to connect to upstream: dial tcp (\d{1,3}(?:\.\d{1,3}){3}:\d+)")
 
 
@@ -71,6 +74,9 @@ class ProxyHealth:
         now = now or datetime.now(timezone.utc)
         for key in keys:
             entry = self.state.setdefault(key, {"strikes": 0})
+            until = entry.get("benched_until")
+            if until and now - datetime.fromisoformat(until) >= timedelta(hours=STRIKE_RESET_HOURS):
+                entry["strikes"] = 0
             entry["strikes"] = entry.get("strikes", 0) + 1
             entry["benched_until"] = (now + timedelta(hours=BENCH_HOURS)).isoformat()
         self._save()

@@ -39,21 +39,32 @@ def test_pick_spreads_load_across_the_whole_list(tmp_path):
     assert used == set(PROXIES)
 
 
-def test_strike_benches_for_24h_then_returns(tmp_path):
+def test_strike_benches_for_an_hour_then_returns(tmp_path):
     health = ProxyHealth(tmp_path / "h.json")
     bad = PROXIES[0]
     health.record_failures({proxy_key(bad)}, now=NOW)
     for seed in range(20):
-        assert bad not in health.pick(PROXIES, 19, now=NOW + timedelta(hours=23), rng=random.Random(seed))
-    later = health.pick(PROXIES, 20, now=NOW + timedelta(hours=25), rng=random.Random(0))
+        assert bad not in health.pick(PROXIES, 19, now=NOW + timedelta(minutes=59), rng=random.Random(seed))
+    later = health.pick(PROXIES, 20, now=NOW + timedelta(minutes=61), rng=random.Random(0))
     assert bad in later
 
 
-def test_three_strikes_retires_permanently(tmp_path):
+def test_strikes_reset_after_a_quiet_day(tmp_path):
+    health = ProxyHealth(tmp_path / "h.json")
+    key = proxy_key(PROXIES[0])
+    for i in range(MAX_STRIKES - 1):
+        health.record_failures({key}, now=NOW + timedelta(hours=2 * i))
+    last_bench_end = NOW + timedelta(hours=2 * (MAX_STRIKES - 2) + 1)
+    health.record_failures({key}, now=last_bench_end + timedelta(hours=25))
+    assert health.state[key]["strikes"] == 1
+    assert health.retired() == []
+
+
+def test_max_strikes_retires_permanently(tmp_path):
     health = ProxyHealth(tmp_path / "h.json")
     bad = PROXIES[0]
     for i in range(MAX_STRIKES):
-        health.record_failures({proxy_key(bad)}, now=NOW + timedelta(days=2 * i))
+        health.record_failures({proxy_key(bad)}, now=NOW + timedelta(hours=2 * i))
     far_future = NOW + timedelta(days=365)
     assert bad not in health.pick(PROXIES, 20, now=far_future, rng=random.Random(0))
     assert health.retired() == [proxy_key(bad)]

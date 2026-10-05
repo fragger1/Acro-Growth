@@ -61,7 +61,9 @@ gosom's proxy pool always starts at the first proxy it's given, and we start one
 passing the whole list would put every search on the same first few proxies. Instead:
 - each search gets **5 random healthy proxies** from `PROXIES_FILE`, spreading load across the whole list;
 - when gosom logs `Failed to connect to upstream: dial tcp IP:port`, that proxy gets a strike and is
-  **benched for 24h**; after **3 strikes** it is **retired** (state in `state/proxy_health.json`, IP:port only);
+  **benched for 1h**; after **10 strikes** it is **retired** (state in `state/proxy_health.json`, IP:port only).
+  Strikes reset once a proxy goes 24h past its last bench without failing — most failures are transient
+  connect errors, and a 24h bench per strike once sidelined 98 of 100 proxies in a single 17h run;
 - runs pause a random **2–6 s** between searches so traffic isn't bursty.
 
 `.venv\Scripts\gmaps proxies` lists benched and retired proxies; replace retired ones in the Webshare

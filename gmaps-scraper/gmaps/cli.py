@@ -110,7 +110,7 @@ def cmd_proxies(args, cfg, log):
 
     health = ProxyHealth(ROOT.joinpath(*PROXY_HEALTH_PATH))
     benched, retired = health.benched(), health.retired()
-    print(f"proxies configured: {len(cfg.proxies)}  benched (24h): {len(benched)}  retired: {len(retired)}")
+    print(f"proxies configured: {len(cfg.proxies)}  benched (1h):{len(benched)}  retired: {len(retired)}")
     for key in benched:
         print(f"  benched: {key}")
     for key in retired:
