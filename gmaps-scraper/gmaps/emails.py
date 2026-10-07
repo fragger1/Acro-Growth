@@ -8,6 +8,8 @@ BLOCKED_DOMAINS = {
     "example.com", "example.org", "domain.com", "email.com", "yourdomain.com", "yoursite.com",
     "mysite.com", "company.com", "test.com", "sentry.io", "wixpress.com", "wix.com",
     "squarespace.com", "godaddy.com", "cloudflare.com", "sentry-next.wixpress.com",
+    # vendors whose addresses sit in many client sites' code (font licenses, Shopify apps, site platforms)
+    "latofonts.com", "typemade.mx", "gist-apps.com", "sitelink.com",
 }
 BLOCKED_LOCAL_PARTS = {
     "example", "yourname", "your.name", "name", "email", "youremail", "your.email",
