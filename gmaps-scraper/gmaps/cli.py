@@ -8,6 +8,7 @@ from gmaps.config import ROOT, load_config
 
 PROXY_HEALTH_PATH = ("state", "proxy_health.json")
 PAUSE_SECONDS = (2, 6)
+RECHECK_DONE_PATH = ("state", "email_recheck_done.txt")
 
 
 def _setup_logging() -> logging.Logger:
@@ -99,6 +100,25 @@ def cmd_export(args, db, cfg, log):
         log.info(f"skipped {sum(skipped.values())} off-target leads (use --any-category to include): {top}")
 
 
+def cmd_recheck_emails(args, db, cfg, log):
+    from functools import partial
+
+    from gmaps.email_finder import enrich_places
+    from gmaps.recheck import recheck_emails
+
+    done_path = ROOT.joinpath(*RECHECK_DONE_PATH)
+    done = set(done_path.read_text(encoding="utf-8").split()) if done_path.exists() else set()
+
+    def mark_done(place_ids):
+        done_path.parent.mkdir(parents=True, exist_ok=True)
+        with done_path.open("a", encoding="utf-8") as f:
+            f.write("".join(pid + "\n" for pid in place_ids))
+
+    stats = recheck_emails(db, partial(enrich_places, max_workers=args.workers), done=done,
+                           mark_done=mark_done, limit=args.limit, log=log.info)
+    log.info(f"recheck finished: {stats}")
+
+
 def cmd_status(args, db, cfg, log):
     summary = db.status_summary()
     print("queue:", summary["queue"])
@@ -153,6 +173,14 @@ def _build_export_parser(sub):
     return p_export
 
 
+def _build_recheck_parser(sub):
+    p_recheck = sub.add_parser("recheck-emails", help="look up emails again for places that have none")
+    p_recheck.add_argument("--limit", type=positive_int, help="check at most this many places")
+    p_recheck.add_argument("--workers", type=positive_int, default=16, help="parallel site fetches")
+    p_recheck.set_defaults(func=cmd_recheck_emails)
+    return p_recheck
+
+
 def _build_status_parser(sub):
     p_status = sub.add_parser("status", help="queue counts and last run")
     p_status.set_defaults(func=cmd_status)
@@ -167,6 +195,7 @@ def main(argv=None):
     _build_queue_parser(sub)
     _build_export_parser(sub)
     _build_status_parser(sub)
+    _build_recheck_parser(sub)
     p_proxies = sub.add_parser("proxies", help="show benched/retired proxies (IP:port only)")
     p_proxies.set_defaults(func=None, local=cmd_proxies)
 

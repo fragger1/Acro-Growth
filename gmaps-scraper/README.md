@@ -65,6 +65,12 @@ matter what User-Agent it sends. To check how much that matters, run
 places that have a website but no email with both plain httpx and curl_cffi, then prints how many each
 one gets through. Per-URL results go to `tmp/`.
 
+Runs only look up emails for places they haven't seen before, so places saved with no email before
+the switch to curl_cffi stay that way. `.venv\Scripts\gmaps recheck-emails` (optionally `--limit N`,
+`--workers N`, default 16) looks them up again and saves any emails found. Finished place IDs are
+appended to `state/email_recheck_done.txt`, so re-running it resumes; delete that file to recheck
+everything again.
+
 ### Proxy rotation
 gosom's proxy pool always starts at the first proxy it's given, and we start one gosom per search, so
 passing the whole list would put every search on the same first few proxies. Instead:

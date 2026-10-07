@@ -86,6 +86,27 @@ class Db:
             known.update(r["place_id"] for r in rows)
         return known
 
+    def places_missing_email(self) -> list[dict]:
+        """Places with a website whose email lookup found nothing."""
+        out: list[dict] = []
+        offset = 0
+        while True:
+            page = (
+                self.c.table("places").select("place_id,website,domain")
+                .not_.is_("website", "null").neq("website", "").eq("emails", "{}")
+                .order("place_id").range(offset, offset + PAGE - 1).execute().data
+            )
+            out += page
+            if len(page) < PAGE:
+                return out
+            offset += PAGE
+
+    def save_place_emails(self, place_id: str, emails: list[str], primary_email: str | None) -> None:
+        # Only fills places that still have no emails, so it never overwrites a concurrent run's upsert.
+        self.c.table("places").update({"emails": emails, "primary_email": primary_email}).eq(
+            "place_id", place_id
+        ).eq("emails", "{}").execute()
+
     def upsert_places(self, places: list[dict], client: str, search_id: int) -> int:
         new = 0
         for i in range(0, len(places), UPSERT_CHUNK):
