@@ -1,3 +1,8 @@
+from contextlib import contextmanager
+from urllib.parse import urljoin
+
+from curl_cffi.requests.exceptions import TooManyRedirects
+
 from gmaps.scraper import ScrapeResult
 
 
@@ -82,3 +87,70 @@ class ScriptedScraper:
 
 def ok(*entries):
     return ScrapeResult(list(entries), 0, "")
+
+
+REDIRECT_STATUSES = (301, 302, 303, 307, 308)
+
+
+class FakeResponse:
+    """The parts of a streaming curl_cffi Response the email finder reads.
+
+    chunks may include an exception, raised when iteration reaches it (an error mid-body).
+    """
+
+    def __init__(self, status_code=200, body="", headers=None, chunks=None, encoding="utf-8"):
+        self.status_code = status_code
+        self.headers = {k.lower(): v for k, v in (headers or {}).items()}
+        if chunks is None:
+            chunks = [body.encode() if isinstance(body, str) else body]
+        self.chunks = chunks
+        self.encoding = encoding
+        self.url = None
+        self.chunks_read = 0
+
+    def iter_content(self):
+        for chunk in self.chunks:
+            if isinstance(chunk, Exception):
+                raise chunk
+            self.chunks_read += 1
+            yield chunk
+
+
+def page(body, status_code=200, content_type="text/html", **kwargs):
+    return FakeResponse(status_code, body, headers={"content-type": content_type}, **kwargs)
+
+
+def redirect(location, status_code=301):
+    return FakeResponse(status_code, headers={"location": location})
+
+
+class FakeSession:
+    """Stands in for the shared curl_cffi Session: serves routes[url] and follows redirects
+    the way curl does, setting the response's final url. A route may be an exception to
+    raise instead; unknown urls get a 404. routes may also be a function of the url."""
+
+    def __init__(self, routes):
+        self.routes = routes
+        self.requested = []
+        self.stream_kwargs = []
+
+    def _respond(self, url):
+        self.requested.append(url)
+        response = self.routes(url) if callable(self.routes) else self.routes.get(url, FakeResponse(404))
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    @contextmanager
+    def stream(self, method, url, allow_redirects=True, max_redirects=30, **kwargs):
+        self.stream_kwargs.append({"allow_redirects": allow_redirects, "max_redirects": max_redirects, **kwargs})
+        response = self._respond(url)
+        followed = 0
+        while allow_redirects and response.status_code in REDIRECT_STATUSES:
+            followed += 1
+            if followed > max_redirects:
+                raise TooManyRedirects(f"Maximum ({max_redirects}) redirects followed")
+            url = urljoin(url, response.headers["location"])
+            response = self._respond(url)
+        response.url = url
+        yield response

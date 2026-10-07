@@ -4,7 +4,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urljoin, urlparse
 
-import httpx
+from curl_cffi import CurlError
+from curl_cffi import requests as curl_requests
 
 from gmaps.emails import clean_emails, pick_primary
 
@@ -21,10 +22,10 @@ MAX_BYTES = 2_000_000
 MAX_REDIRECTS = 5
 REQUEST_TIMEOUT = 10
 FETCH_DEADLINE_SECONDS = 20
-USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/124.0.0.0 Safari/537.36"
-)
+# Many small-business sites sit behind bot protection that 403s any client whose TLS/HTTP2
+# fingerprint isn't a real browser's, whatever User-Agent it sends, so fetch as Chrome
+# (curl_cffi sets Chrome's headers, User-Agent included, to match).
+IMPERSONATE = "chrome"
 
 
 def _site_host(url: str) -> str:
@@ -76,37 +77,40 @@ def contact_links(html_text: str, base_url: str) -> list[str]:
     return links
 
 
-def _fetch_html(client: httpx.Client, url: str) -> tuple[str, str] | None:
+def _fetch_html(session: curl_requests.Session, url: str) -> tuple[str, str] | None:
     """GET url (redirects allowed), guarding against non-HTML content and oversized bodies.
 
     Returns (html_text, final_url) on a 200 HTML-ish response, else None. Never raises.
     """
     started = time.monotonic()
     try:
-        with client.stream("GET", url, follow_redirects=True, timeout=REQUEST_TIMEOUT) as response:
+        with session.stream("GET", url, allow_redirects=True, max_redirects=MAX_REDIRECTS,
+                            timeout=REQUEST_TIMEOUT) as response:
             if response.status_code != 200:
                 return None
             content_type = response.headers.get("content-type", "")
             if content_type and "html" not in content_type.lower():
                 return None
             body = bytearray()
-            for chunk in response.iter_bytes():
+            for chunk in response.iter_content():
                 body.extend(chunk)
                 if len(body) >= MAX_BYTES:
                     break
                 if time.monotonic() - started >= FETCH_DEADLINE_SECONDS:
                     break
-            encoding = response.encoding or "utf-8"
-            text = bytes(body).decode(encoding, errors="replace")
-            return text, str(response.url)
-    except httpx.HTTPError:
+            try:
+                text = bytes(body).decode(response.encoding, errors="replace")
+            except LookupError:  # unknown charset in the Content-Type header
+                text = bytes(body).decode("utf-8", errors="replace")
+            return text, response.url
+    except CurlError:
         return None
 
 
-def find_emails(website: str, client: httpx.Client) -> list[str]:
+def find_emails(website: str, session: curl_requests.Session) -> list[str]:
     if "://" not in website:
         website = "http://" + website
-    homepage = _fetch_html(client, website)
+    homepage = _fetch_html(session, website)
     if homepage is None:
         return []
     homepage_html, homepage_final_url = homepage
@@ -115,7 +119,7 @@ def find_emails(website: str, client: httpx.Client) -> list[str]:
     candidates = list(extract_emails(homepage_html))
 
     for link in contact_links(homepage_html, homepage_final_url):
-        page = _fetch_html(client, link)
+        page = _fetch_html(session, link)
         if page is None:
             continue
         page_html, page_final_url = page
@@ -126,16 +130,21 @@ def find_emails(website: str, client: httpx.Client) -> list[str]:
     return clean_emails(candidates)
 
 
+def new_session() -> curl_requests.Session:
+    return curl_requests.Session(impersonate=IMPERSONATE, timeout=REQUEST_TIMEOUT,
+                                 max_redirects=MAX_REDIRECTS)
+
+
 def enrich_places(places: list[dict], max_workers: int = 8) -> None:
     targets = [p for p in places if p.get("website") and not p.get("emails")]
     if not targets:
         return
 
-    with httpx.Client(follow_redirects=True, timeout=REQUEST_TIMEOUT, max_redirects=MAX_REDIRECTS,
-                       headers={"User-Agent": USER_AGENT}) as client:
+    # One Session shared by all workers (curl_cffi gives each thread its own curl handle).
+    with new_session() as session:
         def process(place: dict) -> None:
             try:
-                emails = find_emails(place["website"], client)
+                emails = find_emails(place["website"], session)
             except Exception:
                 emails = []
             place["emails"] = emails
