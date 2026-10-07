@@ -56,6 +56,15 @@ keep one, or pass `--any-category` to include everything. Skipped leads aren't m
 Tunables live in the Supabase `settings` table: `nightly_limit` (null = unlimited), `concurrency`, `depth`.
 Logs: `logs/gmaps.log`. Exports: `exports/`.
 
+### Email lookups
+For each new place with a website, the email finder fetches the homepage plus up to 4 contact/about
+pages. It fetches them with `curl_cffi` impersonating Chrome, because a lot of small-business sites sit
+behind bot protection that answers 403 to any client whose TLS fingerprint isn't a browser's, no
+matter what User-Agent it sends. To check how much that matters, run
+`.venv\Scripts\python scripts\measure_fetch_block.py --sample 50`. It fetches homepages of
+places that have a website but no email with both plain httpx and curl_cffi, then prints how many each
+one gets through. Per-URL results go to `tmp/`.
+
 ### Proxy rotation
 gosom's proxy pool always starts at the first proxy it's given, and we start one gosom per search, so
 passing the whole list would put every search on the same first few proxies. Instead:
