@@ -135,6 +135,10 @@ class Db:
                 return out
             offset += PAGE
 
+    def shared_email_domains(self, min_sites: int = 3) -> set[str]:
+        rows = self.c.rpc("shared_email_domains", {"p_min_sites": min_sites}).execute().data
+        return {r["domain"] for r in rows}
+
     def record_export(self, client: str, filters: dict, file_name: str, place_ids: list[str]) -> int:
         row = self.c.table("exports").insert(
             {"client": client, "filters": filters, "row_count": len(place_ids), "file_name": file_name}

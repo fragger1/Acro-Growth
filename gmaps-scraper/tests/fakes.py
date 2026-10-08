@@ -7,7 +7,8 @@ from gmaps.scraper import ScrapeResult
 
 
 class FakeDb:
-    def __init__(self, searches=None, existing=None, leads=None):
+    def __init__(self, searches=None, existing=None, leads=None, shared=None):
+        self.shared = set(shared or [])
         self.pending = list(searches or [])
         self.existing = existing or []
         self.leads = leads or []
@@ -59,6 +60,9 @@ class FakeDb:
     def fetch_leads(self, client, since, keyword, include_no_email, new_only):
         self.fetch_args = (client, since, keyword, include_no_email, new_only)
         return self.leads
+
+    def shared_email_domains(self, min_sites=3):
+        return self.shared
 
     def record_export(self, client, filters, file_name, place_ids):
         self.exports.append((client, filters, file_name, place_ids))

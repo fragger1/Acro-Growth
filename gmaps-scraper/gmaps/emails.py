@@ -10,6 +10,9 @@ BLOCKED_DOMAINS = {
     "squarespace.com", "godaddy.com", "cloudflare.com", "sentry-next.wixpress.com",
     # vendors whose addresses sit in many client sites' code (font licenses, Shopify apps, site platforms)
     "latofonts.com", "typemade.mx", "gist-apps.com", "sitelink.com",
+    "calendar.google.com", "emailservices.com", "mystore.com", "mailservice.com", "doe.com",
+    # home internet providers' inboxes are personal (kc.rr.com is Spectrum, sunflower.com Lawrence)
+    "rr.com", "sunflower.com",
 }
 BLOCKED_LOCAL_PARTS = {
     "example", "yourname", "your.name", "name", "email", "youremail", "your.email",
@@ -83,6 +86,28 @@ def _on_domain(email: str, domain: str | None) -> bool:
         or email_domain.endswith("." + domain)
         or domain.endswith("." + email_domain)
     )
+
+
+def _named_after(email: str, name: str | None) -> bool:
+    """True if the email's domain carries the business name (a dealer group's or diocese's own domain)."""
+    label = email.rsplit("@", 1)[1].split(".")[-2] if "." in email.rsplit("@", 1)[1] else ""
+    squashed = re.sub(r"[^a-z0-9]", "", (name or "").lower())
+    if len(label) >= 4 and label in squashed:
+        return True
+    return any(len(word) >= 5 and word in label for word in re.findall(r"[a-z0-9]+", (name or "").lower()))
+
+
+def export_email(emails: list[str], domain: str | None, name: str | None, shared: set[str]) -> tuple[list[str], str | None]:
+    """Usable emails and the primary one for an export.
+
+    Drops emails on a domain in shared (found on several unrelated websites: font foundries, site
+    platforms, placeholders) unless it's the site's own domain or named after the business.
+    """
+    usable = [
+        e for e in clean_emails(emails)
+        if _on_domain(e, domain) or e.rsplit("@", 1)[1] not in shared or _named_after(e, name)
+    ]
+    return usable, pick_primary(usable, domain)
 
 
 def pick_primary(emails: list[str], domain: str | None) -> str | None:

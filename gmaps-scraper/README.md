@@ -53,6 +53,16 @@ extra `ILIKE` pattern in the Supabase `keyword_categories` table for one of thos
 `plumbing contractor` → `Plumber`). The export logs the categories it skipped; add a pattern row to
 keep one, or pass `--any-category` to include everything. Skipped leads aren't marked exported.
 
+Exports also leave out leads outside the client's service area: a client with a row in the Supabase
+`client_areas` table (centre lat/lng + `radius_miles`) only exports places within that radius, which
+works for the ~1 in 5 places Maps gives no address for. Jeff's is 40 miles around Overland Park, which
+covers all 60 of his cities (the farthest, Ottawa, is 36 miles out). `--any-area` turns it off.
+
+Junk emails are dropped at export time: an email on a domain that shows up on 3+ unrelated websites
+(font foundries, website platforms, placeholders like mystore.com) is ignored unless the domain is the
+site's own or carries the business name (a dealer group's domain). The lead falls back to its next
+usable email, or is left out if it has none. The export logs what it skipped for each reason.
+
 Tunables live in the Supabase `settings` table: `nightly_limit` (null = unlimited), `concurrency`, `depth`.
 Logs: `logs/gmaps.log`. Exports: `exports/`.
 

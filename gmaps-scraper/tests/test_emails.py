@@ -16,6 +16,7 @@ def test_clean_drops_junk():
         "x@sentry-next.wixpress.com",
         "team@latofonts.com",
         "support@gist-apps.com",
+        "joe@kc.rr.com",
         "not-an-email",
         "yourname@acme.com",
         "real@acme.com",
