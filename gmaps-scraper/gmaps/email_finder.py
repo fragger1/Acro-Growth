@@ -9,7 +9,10 @@ from curl_cffi import requests as curl_requests
 
 from gmaps.emails import clean_emails, pick_primary
 
-EMAIL_CANDIDATE_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+# The lookbehind makes matches start only at the beginning of a run of local-part characters.
+# Without it, a long run with no "@" (a base64 image in the page) is rescanned from every
+# position, which is quadratic: minutes per 2 MB page, holding the GIL so every worker stalls.
+EMAIL_CANDIDATE_RE = re.compile(r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 CF_EMAIL_RE = re.compile(r'''data-cfemail=["']([0-9a-fA-F]+)["']''')
 HREF_RE = re.compile(r'''href=["']([^"']+)["']''', re.IGNORECASE)
 CONTACT_PATH_RE = re.compile(r"contact|about|connect|wholesale|catering|info", re.IGNORECASE)

@@ -32,6 +32,16 @@ def test_extract_emails_cloudflare_protected():
     assert extract_emails(html) == ["hi@acme.com"]
 
 
+def test_extract_emails_is_linear_on_long_runs_without_at():
+    # A 2 MB base64 blob with no "@" took ~45 minutes with the unanchored regex.
+    import time
+
+    blob = "A" * 2_000_000
+    started = time.monotonic()
+    assert extract_emails(f'<img src="data:image/png;base64,{blob}"> info@acme.com') == ["info@acme.com"]
+    assert time.monotonic() - started < 2
+
+
 def test_extract_emails_no_filtering_returns_junk_too():
     # extract_emails does no filtering (that's clean_emails' job)
     result = extract_emails("test@test.com and real@acme.com")
