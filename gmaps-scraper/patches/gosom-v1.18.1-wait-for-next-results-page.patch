@@ -1,0 +1,201 @@
+diff --git a/gmaps/job.go b/gmaps/job.go
+index a1db237..232490b 100644
+--- a/gmaps/job.go
++++ b/gmaps/job.go
+@@ -370,7 +370,15 @@ func scroll(ctx context.Context,
+ 		}
+ 
+ 		if height == currentScrollHeight {
+-			break
++			// Maps renders the results it has already fetched a few at a time and only
++			// fetches the next 20 once they are all on screen, so an unchanged height here
++			// often means that fetch is still in flight (a slow proxy easily takes longer than
++			// the wait above). Stop only once Maps shows its end-of-list marker or the feed
++			// stays unchanged for feedStallTimeout.
++			height = waitForFeedGrowth(ctx, page, scrollSelector, currentScrollHeight)
++			if height == currentScrollHeight {
++				break
++			}
+ 		}
+ 
+ 		currentScrollHeight = height
+@@ -393,6 +401,67 @@ func scroll(ctx context.Context,
+ 	return cnt, nil
+ }
+ 
++// feedStallTimeout is a var so tests can shorten it.
++var feedStallTimeout = 10 * time.Second
++
++const feedPollInterval = 250 * time.Millisecond
++
++// waitForFeedGrowth polls the results feed (keeping it scrolled to the bottom) until its
++// scroll height differs from height, Maps shows "You've reached the end of the list", or
++// feedStallTimeout passes. It returns the feed's height, which equals height unless the
++// feed grew. If the feed can't be read it returns height, so the caller stops scrolling
++// with what it already has, as it did before this wait existed.
++func waitForFeedGrowth(ctx context.Context, page scrapemate.BrowserPage, scrollSelector string, height int) int {
++	expr := `() => {
++		const el = document.querySelector("` + scrollSelector + `");
++		el.scrollTop = el.scrollHeight;
++		return [el.scrollHeight, /reached the end of the list/i.test(el.innerText)];
++	}`
++
++	deadline := time.Now().Add(feedStallTimeout)
++
++	for time.Now().Before(deadline) {
++		select {
++		case <-ctx.Done():
++			return height
++		default:
++		}
++
++		v, err := page.Eval(expr)
++		if err != nil {
++			return height
++		}
++
++		state, ok := v.([]any)
++		if !ok || len(state) != 2 {
++			return height
++		}
++
++		var newHeight int
++
++		switch h := state[0].(type) {
++		case int:
++			newHeight = h
++		case float64:
++			newHeight = int(h)
++		default:
++			return height
++		}
++
++		if newHeight != height {
++			return newHeight
++		}
++
++		if ended, _ := state[1].(bool); ended {
++			return height
++		}
++
++		page.WaitForTimeout(feedPollInterval)
++	}
++
++	return height
++}
++
+ func isGoogleMapsURL(s string) bool {
+ 	s = strings.TrimSpace(s)
+ 	if s == "" {
+diff --git a/gmaps/scroll_internal_test.go b/gmaps/scroll_internal_test.go
+new file mode 100644
+index 0000000..99555b5
+--- /dev/null
++++ b/gmaps/scroll_internal_test.go
+@@ -0,0 +1,106 @@
++package gmaps
++
++import (
++	"context"
++	"errors"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/gosom/scrapemate"
++	"github.com/stretchr/testify/require"
++)
++
++// fakeFeedPage reports scripted feed heights: each Eval (a scroll or a feed poll) returns
++// the next height, repeating the last one. Polls report the end-of-list marker once the
++// height reaches endHeight (0 = never).
++type fakeFeedPage struct {
++	scrapemate.BrowserPage
++
++	heights   []int
++	endHeight int
++	pollErr   error
++
++	calls  int
++	polls  int
++	maxSeen int
++}
++
++func (p *fakeFeedPage) next() int {
++	h := p.heights[min(p.calls, len(p.heights)-1)]
++	p.calls++
++	p.maxSeen = max(p.maxSeen, h)
++
++	return h
++}
++
++func (p *fakeFeedPage) Eval(js string, _ ...any) (any, error) {
++	if !strings.Contains(js, "reached the end of the list") {
++		return float64(p.next()), nil
++	}
++
++	p.polls++
++
++	if p.pollErr != nil {
++		return nil, p.pollErr
++	}
++
++	h := p.next()
++
++	return []any{float64(h), p.endHeight != 0 && h == p.endHeight}, nil
++}
++
++func (p *fakeFeedPage) WaitForTimeout(time.Duration) {
++	time.Sleep(time.Millisecond)
++}
++
++func TestScrollWaitsForNextPageThatArrivesLate(t *testing.T) {
++	// The first 20 results are fully rendered at 1500; the next page only lands after
++	// two more polls, then the list ends at 2700.
++	page := &fakeFeedPage{heights: []int{1000, 1500, 1500, 1500, 1500, 2200, 2700, 2700}, endHeight: 2700}
++
++	cnt, err := scroll(context.Background(), page, 12, "div[role='feed']")
++
++	require.NoError(t, err)
++	require.Equal(t, 2700, page.maxSeen)
++	require.Equal(t, 5, cnt)
++}
++
++func TestScrollStopsRightAwayAtEndOfList(t *testing.T) {
++	page := &fakeFeedPage{heights: []int{1000, 1000}, endHeight: 1000}
++
++	start := time.Now()
++	cnt, err := scroll(context.Background(), page, 12, "div[role='feed']")
++
++	require.NoError(t, err)
++	require.Equal(t, 2, cnt)
++	require.Equal(t, 1, page.polls)
++	require.Less(t, time.Since(start), time.Second)
++}
++
++func TestScrollGivesUpWhenFeedStaysUnchanged(t *testing.T) {
++	old := feedStallTimeout
++	feedStallTimeout = 300 * time.Millisecond
++
++	defer func() { feedStallTimeout = old }()
++
++	page := &fakeFeedPage{heights: []int{1000, 1000}}
++
++	start := time.Now()
++	cnt, err := scroll(context.Background(), page, 12, "div[role='feed']")
++
++	require.NoError(t, err)
++	require.Equal(t, 2, cnt)
++	require.GreaterOrEqual(t, time.Since(start), 300*time.Millisecond)
++	require.Less(t, time.Since(start), 5*time.Second)
++}
++
++func TestScrollStopsWithWhatItHasWhenFeedCannotBeRead(t *testing.T) {
++	page := &fakeFeedPage{heights: []int{1000, 1000}, pollErr: errors.New("feed gone")}
++
++	cnt, err := scroll(context.Background(), page, 12, "div[role='feed']")
++
++	require.NoError(t, err)
++	require.Equal(t, 2, cnt)
++	require.Equal(t, 1, page.polls)
++}

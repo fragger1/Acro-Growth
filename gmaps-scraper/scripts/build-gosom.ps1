@@ -5,7 +5,8 @@ $Exe = Join-Path $Bin "google-maps-scraper.exe"
 
 $GosomVersion = "v1.18.1"
 $ScrapemateVersion = "v1.4.0"
-$PatchFile = Join-Path $Root "patches\scrapemate-v1.4.0-windows-no-single-process.patch"
+$ScrapematePatchFile = Join-Path $Root "patches\scrapemate-v1.4.0-windows-no-single-process.patch"
+$GosomPatchFile = Join-Path $Root "patches\gosom-v1.18.1-wait-for-next-results-page.patch"
 
 # Pinned to the version already installed in bin/go (bin/go/VERSION, first line),
 # so a rebuild on a machine without bin/go yet doesn't silently fetch a newer Go
@@ -64,22 +65,27 @@ if (-not (Test-ValidClone $ScrapemateSrc "adapters\fetchers\jshttp\jshttp.go")) 
     Invoke-GitClone $ScrapemateVersion "https://github.com/gosom/scrapemate.git" $ScrapemateSrc
 }
 
-# --- 3. Apply the Windows --single-process patch (skip if already applied) ---
+# --- 3. Apply our patches (each skipped if already applied) ---
 # Native stderr redirected through PowerShell 5.1 becomes a terminating ErrorRecord
 # under $ErrorActionPreference = "Stop" even on a expected/non-fatal "not applied yet"
 # result, so relax it just for this check and restore it right after.
-$PrevEAP = $ErrorActionPreference
-$ErrorActionPreference = "Continue"
-git -C $ScrapemateSrc apply --reverse --check $PatchFile 2>$null 1>$null
-$AlreadyApplied = ($LASTEXITCODE -eq 0)
-$ErrorActionPreference = $PrevEAP
-if (-not $AlreadyApplied) {
-    Write-Host "Applying Windows --single-process patch ..."
-    git -C $ScrapemateSrc apply $PatchFile
-    if ($LASTEXITCODE -ne 0) { throw "Failed to apply patch to scrapemate." }
-} else {
-    Write-Host "Patch already applied, skipping."
+function Invoke-PatchOnce($Dir, $Patch, $Name) {
+    $PrevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    git -C $Dir apply --reverse --check $Patch 2>$null 1>$null
+    $AlreadyApplied = ($LASTEXITCODE -eq 0)
+    $ErrorActionPreference = $PrevEAP
+    if (-not $AlreadyApplied) {
+        Write-Host "Applying $Name patch ..."
+        git -C $Dir apply --whitespace=nowarn $Patch
+        if ($LASTEXITCODE -ne 0) { throw "Failed to apply $Name patch in $Dir." }
+    } else {
+        Write-Host "$Name patch already applied, skipping."
+    }
 }
+
+Invoke-PatchOnce $ScrapemateSrc $ScrapematePatchFile "Windows --single-process"
+Invoke-PatchOnce $GosomSrc $GosomPatchFile "wait-for-next-results-page"
 
 # --- 4. Build gosom against the patched local scrapemate ---
 $GoPath = Join-Path $Bin "gopath"

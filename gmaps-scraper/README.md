@@ -32,12 +32,33 @@ https://github.com/gosom/google-maps-scraper/issues/322
   driver dependency) into `bin/src/`,
 - applies `patches/scrapemate-v1.4.0-windows-no-single-process.patch`, which only appends
   `--single-process`/`--no-zygote` when `runtime.GOOS != "windows"` (every other Chromium flag
-  is unchanged), and
+  is unchanged),
+- applies `patches/gosom-v1.18.1-wait-for-next-results-page.patch` (see below), and
 - builds `bin/google-maps-scraper.exe` against the patched scrapemate via a `go.mod` replace
   directive.
 
 Everything the build needs lives under the gitignored `bin/` folder; nothing is installed
-system-wide.
+system-wide. After pulling a change to `patches/`, rerun `scripts/build-gosom.ps1` to rebuild
+the binary (it applies only the patches that aren't applied yet).
+
+### Searches that stop at exactly 20 results
+Maps loads search results 20 at a time and renders them a few per scroll; the next 20 are only
+fetched once the previous ones are all on screen. Unpatched gosom stops scrolling the first time
+the results list doesn't grow within a fixed ~2 s wait, so whenever that next fetch is slow (a
+slow proxy, a slow Google response, a busy machine) it stops at 20 (sometimes at 40 or 60). With
+1 s of extra proxy latency the unpatched binary returned exactly 20 every time on searches that have
+~90 results. The gosom patch keeps waiting up to 10 s for the list to grow, and stops right away
+when Maps shows "You've reached the end of the list".
+
+As a safety net, a search that still comes back with exactly 20 places is retried up to 2 more
+times with other proxies, keeping the fullest result (not for searches limited to 20 or fewer
+places). Each result line in the log ends with `via IP:port`, the proxy gosom loaded the search
+page through.
+
+A search can also legitimately return fewer places on one try than another: Maps sometimes answers
+a zip-code search with a short list (15-18 places for "church in Kansas City, KS 66104", ending with
+"You've reached the end of the list") and other times with ~100. That list really ends, so the
+scraper isn't missing anything on that try, and it isn't retried unless it's exactly 20.
 
 ## Use
 ```
