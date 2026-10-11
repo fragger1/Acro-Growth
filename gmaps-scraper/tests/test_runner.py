@@ -165,6 +165,72 @@ def test_search_level_exception_isolated_run_still_done():
     assert db.runs[1]["status"] == "done"
 
 
+def places(n, prefix="p"):
+    return [entry(f"{prefix}{i}") for i in range(n)]
+
+
+def test_first_page_only_result_is_retried_and_fuller_one_kept():
+    db = FakeDb([search(1)])
+    scraper = ScriptedScraper([ok(*places(20)), ok(*places(80))])
+    stats = run(db, scraper, trigger="manual", limit=None, default_depth=12, log=quiet)
+    assert scraper.calls == [("q1", 12), ("q1", 12)]
+    assert db.finished_searches == [(1, "done", 80, 80, None)]
+    assert stats.places_scraped == 80 and stats.searches_done == 1
+
+
+def test_capped_search_retried_at_most_twice_then_kept():
+    db = FakeDb([search(1), search(2)])
+    scraper = ScriptedScraper([ok(*places(20, "a")), ok(*places(20, "b")), ok(*places(20, "c")), ok(entry("z"))])
+    run(db, scraper, trigger="manual", limit=None, default_depth=12, log=quiet)
+    assert [c[0] for c in scraper.calls] == ["q1", "q1", "q1", "q2"]
+    assert db.finished_searches[0] == (1, "done", 20, 20, None)
+    assert {pid for pid, _ in db.places} >= {f"a{i}" for i in range(20)}
+
+
+def test_retries_keep_the_fullest_result():
+    # A retry can come back with Maps' short version of the list; the earlier 20 is kept,
+    # and the search is still retried while the best result so far is a capped 20.
+    db = FakeDb([search(1)])
+    scraper = ScriptedScraper([ok(*places(20, "a")), ok(*places(15, "b")), ok(*places(70, "c"))])
+    run(db, scraper, trigger="manual", limit=None, default_depth=12, log=quiet)
+    assert len(scraper.calls) == 3
+    assert db.finished_searches[0][2] == 70
+
+
+def test_failed_retries_do_not_lose_the_capped_result():
+    db = FakeDb([search(1)])
+    scraper = ScriptedScraper([ok(*places(20)), ScrapeResult([], 1, "boom"), ScrapeResult([], 1, "boom")])
+    stats = run(db, scraper, trigger="manual", limit=None, default_depth=12, log=quiet)
+    assert db.finished_searches == [(1, "done", 20, 20, None)]
+    assert stats.failed_searches == 0
+
+
+def test_other_counts_are_not_retried():
+    db = FakeDb([search(1), search(2)])
+    scraper = ScriptedScraper([ok(*places(19, "a")), ok(*places(21, "b"))])
+    run(db, scraper, trigger="manual", limit=None, default_depth=12, log=quiet)
+    assert [c[0] for c in scraper.calls] == ["q1", "q2"]
+
+
+def test_search_limited_to_20_or_fewer_places_is_not_retried():
+    db = FakeDb([search(1, place_limit=20)])
+    scraper = ScriptedScraper([ok(*places(20))])
+    run(db, scraper, trigger="manual", limit=None, default_depth=12, log=quiet)
+    assert len(scraper.calls) == 1
+
+
+def test_retry_pauses_first_and_logs_the_proxies_used():
+    db = FakeDb([search(1)])
+    scraper = ScriptedScraper([ScrapeResult(places(20), 0, "", ["10.0.0.1:8001", "10.0.0.2:8002"]),
+                               ScrapeResult(places(60), 0, "", ["10.0.0.3:8003"])])
+    lines, pauses = [], []
+    run(db, scraper, trigger="manual", limit=None, default_depth=12, log=lines.append,
+        pause=lambda: pauses.append(1))
+    assert len(pauses) == 1
+    assert any("retrying" in line and "10.0.0.1:8001" in line for line in lines)
+    assert any("60 places" in line and "10.0.0.3:8003" in line for line in lines)
+
+
 def test_pause_runs_between_searches_but_not_before_the_first():
     db = FakeDb([search(1), search(2), search(3)])
     scraper = ScriptedScraper([ok(entry("a")), ok(entry("b")), ok(entry("c"))])

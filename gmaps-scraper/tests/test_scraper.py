@@ -191,6 +191,21 @@ def test_scraper_gives_each_search_a_random_subset_and_benches_failures(tmp_path
     assert "pw" not in result.stderr_tail
 
 
+def test_scraper_reports_the_proxies_it_gave_gosom_without_credentials():
+    import random
+
+    from gmaps.proxies import proxy_key
+    from gmaps.scraper import GosomScraper
+
+    _RecordingPopen.calls = []
+    _RecordingPopen.stderr_template = ""
+    with patch("gmaps.scraper.subprocess.Popen", _RecordingPopen):
+        result = GosomScraper(_cfg(20), concurrency=3, proxies_per_search=5, rng=random.Random(1))("q", depth=2)
+    (chosen,) = _RecordingPopen.calls
+    assert result.proxies == [proxy_key(p) for p in chosen]
+    assert not any("pw" in p for p in result.proxies)
+
+
 def test_scraper_without_healthy_proxies_fails_without_running_gosom(tmp_path):
     from gmaps.proxies import MAX_STRIKES, ProxyHealth, proxy_key
     from gmaps.scraper import GosomScraper

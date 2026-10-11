@@ -6,7 +6,7 @@ import re
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -34,6 +34,8 @@ class ScrapeResult:
     entries: list[dict]
     returncode: int
     stderr_tail: str
+    # host:port of the proxies gosom was given; it loads the search page through the first one.
+    proxies: list[str] = field(default_factory=list)
 
 
 def sweep_tmp(root: Path) -> None:
@@ -148,6 +150,6 @@ class GosomScraper:
                 self.health.record_failures(failed_hosts(stderr, {proxy_key(p) for p in chosen}))
             stderr = redact(stderr, self.cfg.proxies)
             text = results_file.read_text(encoding="utf-8", errors="replace") if results_file.exists() else ""
-            return ScrapeResult(parse_results(text), returncode, stderr[-2000:])
+            return ScrapeResult(parse_results(text), returncode, stderr[-2000:], [proxy_key(p) for p in chosen])
         finally:
             shutil.rmtree(work, ignore_errors=True)

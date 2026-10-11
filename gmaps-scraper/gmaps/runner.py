@@ -4,6 +4,19 @@ from gmaps.normalize import dedupe_places, normalize
 from gmaps.scraper import depth_for_limit
 
 MAX_CONSECUTIVE_BAD = 3
+# Maps returns search results 20 at a time. gosom used to stop scrolling whenever the next 20
+# took longer than ~2s to arrive (a slow proxy), so exactly 20 results usually means only the
+# first page loaded. The patched gosom waits for it; these retries are a safety net.
+FIRST_PAGE_SIZE = 20
+CAPPED_RETRIES = 2
+
+
+def first_page_only(result, place_limit: int | None) -> bool:
+    return len(result.entries) == FIRST_PAGE_SIZE and (not place_limit or place_limit > FIRST_PAGE_SIZE)
+
+
+def _via(result) -> str:
+    return f" via {result.proxies[0]}" if result.proxies else ""
 
 
 @dataclass
@@ -40,7 +53,18 @@ def run(db, scrape, *, trigger: str, limit: int | None, default_depth: int, log=
             place_limit = search.get("place_limit")
             log(f"[run {run_id}] scraping: {search['query']} (client={search['client']})")
             try:
-                result = scrape(search["query"], depth_for_limit(place_limit, default_depth))
+                depth = depth_for_limit(place_limit, default_depth)
+                result = scrape(search["query"], depth)
+                for attempt in range(1, CAPPED_RETRIES + 1):
+                    if not first_page_only(result, place_limit):
+                        break
+                    log(f"[run {run_id}]   {FIRST_PAGE_SIZE} places{_via(result)}, likely only the first page "
+                        f"loaded; retrying with other proxies ({attempt}/{CAPPED_RETRIES})")
+                    if pause is not None:
+                        pause()
+                    retry = scrape(search["query"], depth)
+                    if len(retry.entries) > len(result.entries):
+                        result = retry
                 places = dedupe_places([normalize(e) for e in result.entries])
                 if place_limit:
                     places = places[:place_limit]
@@ -67,7 +91,8 @@ def run(db, scrape, *, trigger: str, limit: int | None, default_depth: int, log=
                 stats.places_new += new
                 stats.places_with_email += sum(1 for p in places if p["primary_email"])
                 bad_streak = 0
-                log(f"[run {run_id}]   {len(places)} places, {new} new (run total new: {stats.places_new})")
+                log(f"[run {run_id}]   {len(places)} places, {new} new (run total new: {stats.places_new})"
+                    f"{_via(result)}")
             except Exception as exc:
                 db.finish_search(search["id"], "failed", 0, 0, repr(exc)[:2000])
                 stats.failed_searches += 1
