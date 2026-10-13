@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Luath Medical Outbound Plan</title>
+<style>
+  @page { size: A4; margin: 11mm 14mm 10mm 14mm; }
+  :root {
+    --ink: #16202a;
+    --muted: #5a6672;
+    --line: #dfe4e8;
+    --accent: #0f6e6a;
+    --accent-soft: #e8f3f2;
+    --s1: #2f5fa7;
+    --s1-soft: #edf2fa;
+    --s2: #8a4b14;
+    --s2-soft: #f8f0e7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Inter", "Liberation Sans", sans-serif;
+    font-size: 9.1pt;
+    line-height: 1.38;
+    color: var(--ink);
+    background: #fff;
+  }
+  h1 { font-family: "Inter Display", "Inter", sans-serif; font-size: 19pt; line-height: 1.15; margin: 0 0 3pt; font-weight: 700; letter-spacing: -0.01em; }
+  h2 { font-family: "Inter Display", "Inter", sans-serif; font-size: 11.5pt; margin: 9pt 0 4pt; font-weight: 650; color: var(--accent); }
+  h3 { font-size: 9.4pt; margin: 0 0 3pt; font-weight: 650; }
+  p { margin: 0 0 5pt; }
+  ul, ol { margin: 0 0 5pt; padding-left: 13pt; }
+  li { margin-bottom: 2pt; }
+  .sub { color: var(--muted); font-size: 9.6pt; margin-bottom: 2pt; }
+  .meta { color: var(--muted); font-size: 8.2pt; border-bottom: 1px solid var(--line); padding-bottom: 7pt; margin-bottom: 4pt; }
+  .engine { display: grid; grid-template-columns: 1fr 1fr; gap: 8pt; margin-top: 4pt; }
+  .box { border: 1px solid var(--line); border-radius: 5pt; padding: 7pt 9pt; }
+  .box.shared { background: var(--accent-soft); border-color: #cfe5e3; }
+  .box .label { font-size: 7.6pt; font-weight: 650; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 2pt; }
+  table { width: 100%; border-collapse: collapse; margin-top: 3pt; font-size: 8.6pt; }
+  th, td { text-align: left; vertical-align: top; padding: 4.5pt 6pt; border-bottom: 1px solid var(--line); }
+  th { font-size: 8.8pt; font-weight: 650; }
+  th.s1 { color: var(--s1); background: var(--s1-soft); }
+  th.s2 { color: var(--s2); background: var(--s2-soft); }
+  td.row { width: 15%; font-weight: 600; color: var(--muted); }
+  td { width: 42.5%; }
+  .emails { display: grid; grid-template-columns: 1fr 1fr; gap: 8pt; }
+  .email { border: 1px solid var(--line); border-radius: 5pt; padding: 7pt 9pt; font-size: 8.5pt; }
+  .email.s1 { border-top: 3px solid var(--s1); }
+  .email.s2 { border-top: 3px solid var(--s2); }
+  .email .subj { font-weight: 600; margin-bottom: 5pt; }
+  .email .subj span { color: var(--muted); font-weight: 500; }
+  .var { color: var(--accent); font-weight: 600; }
+  .note { color: var(--muted); font-style: italic; }
+  .cadence { font-size: 8.3pt; color: var(--muted); margin-top: 6pt; border-top: 1px dashed var(--line); padding-top: 5pt; }
+  .weeks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6pt; }
+  .week { border: 1px solid var(--line); border-radius: 5pt; padding: 6pt 8pt; font-size: 8.4pt; }
+  .week h3 { color: var(--accent); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10pt; }
+  .page-break { break-before: page; }
+  .email, .box, .week, table, tr { break-inside: avoid; }
+  .foot { margin-top: 6pt; padding-top: 4pt; border-top: 1px solid var(--line); color: var(--muted); font-size: 8pt; }
+</style>
+</head>
+<body>
+
+<h1>Two segments, one outbound engine</h1>
+<div class="sub">A starting plan for Luath Medical: Apollo cold email plus LinkedIn organic and paid</div>
+<div class="meta">Prepared by Ahmed M. (AcroGrowth) · October 2026 · This draft is based only on your job post. I'd refine it with your messaging, case studies and target geographies at kickoff.</div>
+
+<h2>1. How the engine is shared and where it splits</h2>
+<div class="engine">
+  <div class="box shared">
+    <div class="label">Shared across both segments</div>
+    One Apollo workspace and sending setup (secondary domains, SPF/DKIM/DMARC, warm-up). One LinkedIn presence. One weekly report, split by segment. One set of Luath proof points: case studies, process, team.
+  </div>
+  <div class="box">
+    <div class="label">Separate for each segment</div>
+    The list, the buying trigger, the offer, the copy, the cadence and the call to action. Startup founders and OEM engineering managers buy for different reasons, so they never get the same sequence.
+  </div>
+</div>
+
+<h2>2. Targeting, signals and messaging by segment</h2>
+<table>
+  <tr><th></th><th class="s1">Segment 1: Early-stage startups</th><th class="s2">Segment 2: OEMs &amp; established suppliers</th></tr>
+  <tr><td class="row">Who</td>
+      <td>Founders, CEOs, CTOs and R&amp;D leads at pre-seed to Series A device companies (roughly 2–30 staff).</td>
+      <td>Engineering Managers, Directors of Engineering, R&amp;D Managers and Product Development leads at device OEMs, contract manufacturers and component suppliers.</td></tr>
+  <tr><td class="row">Why now</td>
+      <td>Time pressure: a raise or grant just landed, or a bench test, clinical build or funding round is coming up.</td>
+      <td>Capacity pressure: the team is stretched by a launch, a line transfer or open roles that haven't been filled.</td></tr>
+  <tr><td class="row">Qualifying signals</td>
+      <td>
+        <ul>
+          <li>Funding round or grant in the last 12 months</li>
+          <li>No or very few mechanical/design engineers on LinkedIn</li>
+          <li>Pre-clearance: no 510(k)/CE mark yet; an early feasibility study planned</li>
+          <li>Founder posting about prototypes, first-in-human or fundraising</li>
+        </ul>
+      </td>
+      <td>
+        <ul>
+          <li>Mechanical design, R&amp;D or manufacturing engineer roles open for a long time or reposted</li>
+          <li>Recent 510(k) clearance or product launch (sustaining and launch load)</li>
+          <li>New site, expansion or line-transfer announcements</li>
+          <li>50+ staff, with an internal engineering team already in place</li>
+        </ul>
+      </td></tr>
+  <tr><td class="row">Data sources</td>
+      <td>Crunchbase/Dealroom and Apollo funding filters; Enterprise Ireland, EIC Accelerator and SBIR/STTR award lists; MedTech Innovator and BioInnovate Ireland cohorts; ClinicalTrials.gov device studies; LinkedIn headcount by title.</td>
+      <td>Apollo/LinkedIn industry filters and NAICS 339112, 339113, 334510; FDA 510(k) database; job boards; Irish Medtech Association members; exhibitor lists from MD&amp;M West, MEDICA/COMPAMED and Medical Technology Ireland.</td></tr>
+  <tr><td class="row">Exclude</td>
+      <td>Software-only (SaMD) and digital health; pharma/biotech; startups that already have an engineering team in place.</td>
+      <td>Distributors and sales-only offices; software-only companies.</td></tr>
+  <tr><td class="row">Offer</td>
+      <td>"An investor-ready prototype, then bench or clinical builds, without a full-time hire."</td>
+      <td>"A specialist alongside your team for defined work: DFM, tolerance stack-ups, design reviews, tooling and assembly. No new headcount."</td></tr>
+  <tr><td class="row">Tone</td>
+      <td>Founder to founder. Short and direct, about their timeline and their next raise.</td>
+      <td>Engineer to engineer. Precise and technical, with no hype words. Reads like a scope, not a pitch.</td></tr>
+  <tr><td class="row">Call to action</td>
+      <td>A 15-minute call about their timeline.</td>
+      <td>Low commitment: "Want a one-page overview?" Then a call when the next crunch comes.</td></tr>
+</table>
+
+<h2 class="page-break" style="margin-top:0">3. First-touch emails (drafts)</h2>
+<div class="emails">
+  <div class="email s1">
+    <div class="subj"><span>Subject:</span> <span class="var">{{company}}</span> prototype</div>
+    <p>Hi <span class="var">{{first_name}}</span>,</p>
+    <p>Congrats on <span class="var">{{signal, e.g. closing the pre-seed / the EIC award}}</span>.</p>
+    <p>Most device founders at your stage need a working prototype and bench data before the next round, but a full mechanical team doesn't make sense yet.</p>
+    <p>Luath fills that gap. We take a concept to an investor-ready prototype and on into bench testing or clinical builds, working as your engineering team until you're ready to hire one. <span class="note">[one-line Luath startup case study]</span></p>
+    <p>Worth 15 minutes to see if your timeline fits?</p>
+    <p><span class="var">{{sender}}</span></p>
+    <div class="cadence"><b>Sequence:</b> 4 touches over about 2 weeks: signal + offer → case study → a useful insight (what investors want from a prototype) → close the loop. Plus a LinkedIn connect.</div>
+  </div>
+  <div class="email s2">
+    <div class="subj"><span>Subject:</span> extra hands on <span class="var">{{product area}}</span>?</div>
+    <p>Hi <span class="var">{{first_name}}</span>,</p>
+    <p>I noticed <span class="var">{{company}}</span> has had a <span class="var">{{Senior Mechanical Design Engineer}}</span> role open since <span class="var">{{month}}</span>. While it's being filled, that work usually lands on the rest of the team.</p>
+    <p>Luath is a medical device engineering partner. Teams bring us defined pieces of work, like DFM, tolerance stack-ups, design reviews, and tooling and assembly support, when they need capacity or a specialist rather than another hire. <span class="note">[one-line example, e.g. the handle for a minimally invasive device]</span></p>
+    <p>Would a one-page overview of how we plug into an existing team be useful?</p>
+    <p><span class="var">{{sender}}</span></p>
+    <div class="cadence"><b>Sequence:</b> 5 touches over about 4 weeks: capacity signal → a specific capability example → LinkedIn engagement → a second contact on the same team → "park it for the next crunch".</div>
+  </div>
+</div>
+
+<h2>4. LinkedIn: organic and paid</h2>
+<div class="two">
+  <div class="box">
+    <h3>Organic</h3>
+    <ul>
+      <li>Post from a person (founder or lead engineer). Personal posts usually travel further than company pages.</li>
+      <li>2–3 posts a week, alternating audiences: DFM and stack-up lessons for OEMs; concept-to-prototype stories for founders.</li>
+      <li>Connect with prospects after email 1 and engage with their posts, so the name is familiar before follow-ups land.</li>
+    </ul>
+  </div>
+  <div class="box">
+    <h3>Paid</h3>
+    <ul>
+      <li>Matched Audiences: upload both account lists, so ads only reach companies already being emailed.</li>
+      <li>Thought Leader Ads to boost the best organic posts; Document Ads with a gated checklist (DFM for OEMs, prototype-readiness for founders).</li>
+      <li>Small budget first. Scale only what produces replies and meetings, not just clicks.</li>
+    </ul>
+  </div>
+</div>
+
+<h2>5. First 30 days</h2>
+<div class="weeks">
+  <div class="week"><h3>Week 1: Set up</h3>Kickoff on messaging and ICP limits. Audit Apollo sending (domains, authentication, warm-up). Build and verify ~250 accounts per segment. Draft all copy for your sign-off.</div>
+  <div class="week"><h3>Week 2: Launch</h3>Both sequences go live at low volume. LinkedIn profile tune-up, first posts, connection outreach. Nothing goes out without your approval.</div>
+  <div class="week"><h3>Week 3: Learn</h3>Read every reply. A/B test the angle per segment (signal-led vs proof-led). First paid test: Matched Audience plus a Thought Leader Ad.</div>
+  <div class="week"><h3>Week 4: Adjust</h3>Monthly review: what's working by segment, what gets cut, and the plan for month 2.</div>
+</div>
+
+<div class="two" style="margin-top:2pt">
+  <div>
+    <h2>6. What you'd see every week</h2>
+    <ul>
+      <li><b>By segment:</b> contacts reached, replies, positive replies, meetings booked and held</li>
+      <li><b>By list source and angle:</b> which signal and message produced conversations</li>
+      <li><b>Health:</b> bounce and spam-complaint rates; LinkedIn acceptance, ad CTR and cost per lead</li>
+      <li><b>Next week:</b> the changes I'm making and why</li>
+    </ul>
+  </div>
+  <div>
+    <h2>7. Questions for kickoff</h2>
+    <ol>
+      <li>Geographies: Ireland/UK, wider EU, US?</li>
+      <li>Strongest device areas, and anything you won't take on?</li>
+      <li>Which segment matters more in the next 90 days?</li>
+      <li>Apollo plan, sending domains and inboxes today?</li>
+      <li>Whose name goes on emails and posts? LinkedIn ad budget?</li>
+    </ol>
+  </div>
+</div>
+
+<div class="foot">Ahmed M. · AcroGrowth · Signal-based outbound with Clay, Apollo and Exa · Prepared for Luath Medical's job post on Upwork</div>
+
+</body>
+</html>
