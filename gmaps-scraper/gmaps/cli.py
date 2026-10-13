@@ -141,6 +141,37 @@ def cmd_proxies(args, cfg, log):
         print(f"  retired (replace in Webshare): {key}")
 
 
+def cmd_site_filter(args, cfg, log):
+    from pathlib import Path
+
+    from gmaps.site_filter import COMMERCIAL_ROOFING_KEYWORDS, filter_csv
+
+    in_path = Path(args.csv)
+    if not in_path.exists():
+        raise SystemExit(f"no such file: {in_path}")
+    keywords = [k.strip() for k in args.keywords.split(",") if k.strip()] if args.keywords \
+        else list(COMMERCIAL_ROOFING_KEYWORDS)
+    out_path = in_path.with_name(f"{in_path.stem}_site_match.csv")
+    log.info(f"site-filter {in_path.name}: checking sites for {', '.join(keywords)}")
+    stats = filter_csv(in_path, out_path, keywords, max_workers=args.workers)
+    log.info(f"kept {stats.matched} leads in {out_path}; left out {stats.no_match} with no keyword on their site, "
+             f"{stats.unreachable} whose site couldn't be fetched, {stats.no_website} with no website")
+    if stats.keyword_counts:
+        top = ", ".join(f"{kw} {n}" for kw, n in sorted(stats.keyword_counts.items(), key=lambda kv: -kv[1]))
+        log.info(f"keywords found: {top}")
+
+
+def _build_site_filter_parser(sub):
+    p_filter = sub.add_parser("site-filter",
+                              help="keep leads in an export CSV whose name or website mentions keywords")
+    p_filter.add_argument("csv", help="export CSV, e.g. exports/acro_20261013_120000.csv")
+    p_filter.add_argument("--keywords",
+                          help='comma-separated, e.g. "TPO, EPDM, flat roof" (default: commercial roofing terms)')
+    p_filter.add_argument("--workers", type=positive_int, default=16, help="parallel site fetches")
+    p_filter.set_defaults(func=None, local=cmd_site_filter)
+    return p_filter
+
+
 def _build_run_parser(sub):
     p_run = sub.add_parser("run", help="scrape pending searches")
     group = p_run.add_mutually_exclusive_group()
@@ -202,6 +233,7 @@ def main(argv=None):
     _build_export_parser(sub)
     _build_status_parser(sub)
     _build_recheck_parser(sub)
+    _build_site_filter_parser(sub)
     p_proxies = sub.add_parser("proxies", help="show benched/retired proxies (IP:port only)")
     p_proxies.set_defaults(func=None, local=cmd_proxies)
 

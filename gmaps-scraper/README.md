@@ -79,6 +79,21 @@ Exports also leave out leads outside the client's service area: a client with a 
 works for the ~1 in 5 places Maps gives no address for. Jeff's is 40 miles around Overland Park, which
 covers all 60 of his cities (the farthest, Ottawa, is 36 miles out). `--any-area` turns it off.
 
+### Commercial-only leads (site keyword filter)
+Maps has no commercial roofer category; commercial and residential roofers are both "Roofing contractor".
+`gmaps site-filter` reads an export CSV, fetches each lead's homepage plus up to 3 same-site
+service pages (paths containing commercial/industrial/service/roof), and writes the leads whose name or
+site mentions a keyword to `<export>_site_match.csv`, with the matched words in a `site_keywords` column:
+```
+.venv\Scripts\gmaps site-filter exports\acro_20261013_120000.csv
+.venv\Scripts\gmaps site-filter exports\acro_20261013_120000.csv --keywords "TPO, EPDM, flat roof"
+```
+The default keywords are commercial roofing terms (commercial, industrial, TPO, EPDM, flat roof, modified
+bitumen, single-ply, roof coating, metal roofing...). Leads with no website are kept only when their name
+matches; leads whose site can't be fetched are left out. It needs no Supabase access and doesn't mark
+anything exported. The `commercial roofing` search keyword maps to the `Roofing contractor` category
+(migration `20261013000001`), so that search isn't dropped as off-target.
+
 Junk emails are dropped at export time: an email on a domain that shows up on 3+ unrelated websites
 (font foundries, website platforms, placeholders like mystore.com) is ignored unless the domain is the
 site's own or carries the business name (a dealer group's domain). The lead falls back to its next
