@@ -1,13 +1,15 @@
-"""Verify the primary email of each lead in a CSV with Reoon, one email at a time.
+"""Verify the primary email of each lead in a CSV with Reoon's single-email endpoint.
 
-Bulk verification gave errors before, so this calls Reoon's single-email endpoint sequentially
-with a pause between calls, retries transient failures, and stops on account problems (bad key,
+Bulk verification gave errors before, so every email is its own single-email request (several
+run in parallel), transient failures are retried, and stops on account problems (bad key,
 no credits) instead of burning through the list. Every verdict is appended to a results file as
 it arrives, so an interrupted run resumes without paying for the same email twice.
 """
 import csv
 import json
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -88,10 +90,12 @@ class VerifyStats:
 
 
 def verify_csv(in_path: Path, out_path: Path, errors_path: Path, results_path: Path, api_key: str, *,
-               delay: float = 2.0, client=None, sleep=time.sleep, log=print) -> VerifyStats:
+               workers: int = 10, delay: float = 0.0, client=None, sleep=time.sleep,
+               log=print) -> VerifyStats:
     """Write the leads whose primary email Reoon calls safe or role_account to out_path, with
     the verdict in a reoon_status column. Leads Reoon couldn't check go to errors_path (a rerun
-    retries them); every other verdict is dropped. Stops early on a Reoon account error."""
+    retries them); every other verdict is dropped. Each email is its own single-email request;
+    up to `workers` run at once. Stops early on a Reoon account error."""
     with in_path.open(encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f)
         columns = list(reader.fieldnames or [])
@@ -100,50 +104,66 @@ def verify_csv(in_path: Path, out_path: Path, errors_path: Path, results_path: P
     results = load_results(results_path)
     results_path.parent.mkdir(parents=True, exist_ok=True)
     stats = VerifyStats()
-    kept, errored = [], []
+    to_check = list(dict.fromkeys(e for e in (_email(r) for r in rows) if e and e not in results))
+    log(f"verify: {len(rows)} leads, {len(to_check)} emails to check with Reoon "
+        f"({len(results)} already checked), {workers} at a time")
+
     owns_client = client is None
-    client = client or httpx.Client(headers={"User-Agent": "gmaps-scraper"})
-    to_check = len({(r.get("primary_email") or "").strip().lower() for r in rows} - set(results) - {""})
-    log(f"verify: {len(rows)} leads, {to_check} emails to check with Reoon ({len(results)} already checked)")
-    checked = 0
+    client = client or httpx.Client(headers={"User-Agent": "gmaps-scraper"},
+                                    limits=httpx.Limits(max_connections=workers))
+    lock = threading.Lock()
+    stop = threading.Event()
+    done = [0]
+
+    def check(email: str) -> None:
+        if stop.is_set():
+            return
+        if delay:
+            sleep(delay)
+        try:
+            status = verify_with_retries(email, api_key, client, sleep=sleep, log=log)
+        except ReoonAccountError as exc:
+            if not stop.is_set():
+                stop.set()
+                stats.stopped = str(exc)
+                log(f"verify: stopping, Reoon refused the request: {exc}")
+            return
+        except ReoonTransientError as exc:
+            log(f"  {email}: gave up after {RETRIES} retries: {exc}")
+            return
+        with lock:
+            results[email] = status
+            results_file.write(json.dumps({"email": email, "status": status}) + "\n")
+            results_file.flush()
+            done[0] += 1
+            if done[0] % 50 == 0:
+                log(f"verify: checked {done[0]}/{len(to_check)}")
+
     try:
         with results_path.open("a", encoding="utf-8") as results_file:
-            for row in rows:
-                email = (row.get("primary_email") or "").strip().lower()
-                if not email:
-                    stats.no_email += 1
-                    continue
-                status = results.get(email)
-                if status is None and not stats.stopped:
-                    if checked:
-                        sleep(delay)
-                    checked += 1
-                    try:
-                        status = verify_with_retries(email, api_key, client, sleep=sleep, log=log)
-                    except ReoonAccountError as exc:
-                        stats.stopped = str(exc)
-                        log(f"verify: stopping, Reoon refused the request: {exc}")
-                    except ReoonTransientError as exc:
-                        log(f"  {email}: gave up after {RETRIES} retries: {exc}")
-                    if status is not None:
-                        results[email] = status
-                        results_file.write(json.dumps({"email": email, "status": status}) + "\n")
-                        results_file.flush()
-                    if checked % 50 == 0:
-                        log(f"verify: checked {checked}/{to_check}")
-                if status is None:
-                    stats.errors += 1
-                    errored.append(row)
-                    continue
-                stats.statuses[status] = stats.statuses.get(status, 0) + 1
-                if status in KEEP_STATUSES:
-                    stats.kept += 1
-                    kept.append({**row, STATUS_COLUMN: status})
-                else:
-                    stats.dropped += 1
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                list(executor.map(check, to_check))
     finally:
         if owns_client:
             client.close()
+
+    kept, errored = [], []
+    for row in rows:
+        email = _email(row)
+        if not email:
+            stats.no_email += 1
+            continue
+        status = results.get(email)
+        if status is None:
+            stats.errors += 1
+            errored.append(row)
+            continue
+        stats.statuses[status] = stats.statuses.get(status, 0) + 1
+        if status in KEEP_STATUSES:
+            stats.kept += 1
+            kept.append({**row, STATUS_COLUMN: status})
+        else:
+            stats.dropped += 1
 
     _write(out_path, columns + [STATUS_COLUMN], kept)
     if errored:
@@ -151,6 +171,10 @@ def verify_csv(in_path: Path, out_path: Path, errors_path: Path, results_path: P
     elif errors_path.exists():
         errors_path.unlink()
     return stats
+
+
+def _email(row: dict) -> str:
+    return (row.get("primary_email") or "").strip().lower()
 
 
 def _write(path: Path, columns, rows):

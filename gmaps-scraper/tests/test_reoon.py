@@ -82,13 +82,12 @@ def test_keeps_only_safe_and_role(tmp_path):
     ])
     client = FakeClient({"a@a.com": [ok("safe")], "info@b.com": [ok("role_account")],
                          "c@c.com": [ok("catch_all")], "d@d.com": [ok("invalid")]})
-    sleeps = []
-    stats = verify_csv(in_path, out_path, err_path, res_path, "KEY", delay=2, client=client,
-                       sleep=sleeps.append, log=lambda m: None)
+    stats = verify_csv(in_path, out_path, err_path, res_path, "KEY", workers=3, client=client,
+                       sleep=lambda s: None, log=lambda m: None)
     rows = _read(out_path)
     assert [(r["name"], r["reoon_status"]) for r in rows] == [("A", "safe"), ("B", "role_account")]
     assert (stats.kept, stats.dropped, stats.errors, stats.no_email) == (2, 2, 0, 1)
-    assert sleeps == [2, 2, 2]  # one pause between each of the 4 calls, never concurrent
+    assert sorted(client.calls) == ["a@a.com", "c@c.com", "d@d.com", "info@b.com"]  # one request each
     assert not err_path.exists()
 
 
@@ -123,7 +122,7 @@ def test_account_error_stops_and_leaves_rest_for_rerun(tmp_path):
     ])
     client = FakeClient({"a@a.com": [ok("safe")],
                          "b@b.com": [FakeResponse(402, {"status": "error", "reason": "Insufficient credits"})]})
-    stats = verify_csv(in_path, out_path, err_path, res_path, "KEY", client=client,
+    stats = verify_csv(in_path, out_path, err_path, res_path, "KEY", workers=1, client=client,
                        sleep=lambda s: None, log=lambda m: None)
     assert client.calls == ["a@a.com", "b@b.com"]  # c@c.com never sent
     assert stats.stopped and stats.kept == 1 and stats.errors == 2

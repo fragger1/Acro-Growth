@@ -96,7 +96,7 @@ anything exported. The `commercial roofing` search keyword maps to the `Roofing 
 
 ### Verifying emails with Reoon
 `gmaps verify-emails <csv>` checks each lead's `primary_email` with Reoon's single-email API in power
-mode, one email at a time with a 2 s pause (`--delay`), and writes the leads Reoon calls `safe` or
+mode, one request per email (never the bulk endpoint), 10 at a time (`--workers`), and writes the leads Reoon calls `safe` or
 `role_account` to `<csv>_verified.csv` with a `reoon_status` column. Every other status (invalid,
 catch_all, disposable, unknown, ...) is dropped. Needs `REOON_API_KEY` in `.env`.
 ```

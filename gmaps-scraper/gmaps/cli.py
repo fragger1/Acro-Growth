@@ -177,7 +177,7 @@ def cmd_verify_emails(args, cfg, log):
     out_path = in_path.with_name(f"{in_path.stem}_verified.csv")
     errors_path = in_path.with_name(f"{in_path.stem}_verify_errors.csv")
     stats = verify_csv(in_path, out_path, errors_path, ROOT.joinpath(*REOON_RESULTS_PATH), api_key,
-                       delay=args.delay, log=log.info)
+                       workers=args.workers, delay=args.delay, log=log.info)
     log.info(f"kept {stats.kept} leads ({', '.join(KEEP_STATUSES)}) in {out_path}; dropped {stats.dropped}, "
              f"{stats.no_email} with no email")
     if stats.statuses:
@@ -192,9 +192,11 @@ def cmd_verify_emails(args, cfg, log):
 
 def _build_verify_parser(sub):
     p_verify = sub.add_parser("verify-emails",
-                              help="verify primary emails in a CSV with Reoon one at a time; keep safe + role")
+                              help="verify primary emails in a CSV with Reoon (single-email API, no bulk); keep safe + role")
     p_verify.add_argument("csv", help="CSV with a primary_email column, e.g. exports/acro_..._site_match.csv")
-    p_verify.add_argument("--delay", type=float, default=2.0, help="seconds to wait between Reoon calls")
+    p_verify.add_argument("--workers", type=positive_int, default=10,
+                          help="single-email checks running at once (default 10; 1 = strictly one at a time)")
+    p_verify.add_argument("--delay", type=float, default=0.0, help="seconds each worker waits before a call")
     p_verify.set_defaults(func=None, local=cmd_verify_emails)
     return p_verify
 
