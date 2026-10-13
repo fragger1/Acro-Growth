@@ -9,6 +9,7 @@ from gmaps.config import ROOT, load_config
 PROXY_HEALTH_PATH = ("state", "proxy_health.json")
 PAUSE_SECONDS = (2, 6)
 RECHECK_DONE_PATH = ("state", "email_recheck_done.txt")
+REOON_RESULTS_PATH = ("state", "reoon_results.jsonl")
 
 
 def _setup_logging() -> logging.Logger:
@@ -161,6 +162,43 @@ def cmd_site_filter(args, cfg, log):
         log.info(f"keywords found: {top}")
 
 
+def cmd_verify_emails(args, cfg, log):
+    import os
+    from pathlib import Path
+
+    from gmaps.reoon import KEEP_STATUSES, verify_csv
+
+    api_key = os.environ.get("REOON_API_KEY", "").strip()
+    if not api_key:
+        raise SystemExit("REOON_API_KEY must be set in gmaps-scraper/.env")
+    in_path = Path(args.csv)
+    if not in_path.exists():
+        raise SystemExit(f"no such file: {in_path}")
+    out_path = in_path.with_name(f"{in_path.stem}_verified.csv")
+    errors_path = in_path.with_name(f"{in_path.stem}_verify_errors.csv")
+    stats = verify_csv(in_path, out_path, errors_path, ROOT.joinpath(*REOON_RESULTS_PATH), api_key,
+                       delay=args.delay, log=log.info)
+    log.info(f"kept {stats.kept} leads ({', '.join(KEEP_STATUSES)}) in {out_path}; dropped {stats.dropped}, "
+             f"{stats.no_email} with no email")
+    if stats.statuses:
+        log.info("reoon statuses: " + ", ".join(f"{s} {n}" for s, n in
+                                                 sorted(stats.statuses.items(), key=lambda kv: -kv[1])))
+    if stats.errors:
+        log.info(f"{stats.errors} leads couldn't be checked; they're in {errors_path}. "
+                 f"Run the same command again to retry them (finished emails aren't re-checked).")
+    if stats.stopped:
+        log.error(f"stopped early: {stats.stopped}")
+
+
+def _build_verify_parser(sub):
+    p_verify = sub.add_parser("verify-emails",
+                              help="verify primary emails in a CSV with Reoon one at a time; keep safe + role")
+    p_verify.add_argument("csv", help="CSV with a primary_email column, e.g. exports/acro_..._site_match.csv")
+    p_verify.add_argument("--delay", type=float, default=2.0, help="seconds to wait between Reoon calls")
+    p_verify.set_defaults(func=None, local=cmd_verify_emails)
+    return p_verify
+
+
 def _build_site_filter_parser(sub):
     p_filter = sub.add_parser("site-filter",
                               help="keep leads in an export CSV whose name or website mentions keywords")
@@ -234,6 +272,7 @@ def main(argv=None):
     _build_status_parser(sub)
     _build_recheck_parser(sub)
     _build_site_filter_parser(sub)
+    _build_verify_parser(sub)
     p_proxies = sub.add_parser("proxies", help="show benched/retired proxies (IP:port only)")
     p_proxies.set_defaults(func=None, local=cmd_proxies)
 

@@ -94,6 +94,19 @@ matches; leads whose site can't be fetched are left out. It needs no Supabase ac
 anything exported. The `commercial roofing` search keyword maps to the `Roofing contractor` category
 (migration `20261013000001`), so that search isn't dropped as off-target.
 
+### Verifying emails with Reoon
+`gmaps verify-emails <csv>` checks each lead's `primary_email` with Reoon's single-email API in power
+mode, one email at a time with a 2 s pause (`--delay`), and writes the leads Reoon calls `safe` or
+`role_account` to `<csv>_verified.csv` with a `reoon_status` column. Every other status (invalid,
+catch_all, disposable, unknown, ...) is dropped. Needs `REOON_API_KEY` in `.env`.
+```
+.venv\Scripts\gmaps verify-emails exports\acro_20261013_134050_site_match.csv
+```
+Each verdict is appended to `state/reoon_results.jsonl` as it arrives, so rerunning the same command
+after Ctrl+C or an error resumes without paying for an email twice. Network errors, 429s and 5xx are
+retried with backoff; leads still unchecked go to `<csv>_verify_errors.csv` for the next rerun. A bad key
+or running out of credits stops the run immediately.
+
 Junk emails are dropped at export time: an email on a domain that shows up on 3+ unrelated websites
 (font foundries, website platforms, placeholders like mystore.com) is ignored unless the domain is the
 site's own or carries the business name (a dealer group's domain). The lead falls back to its next
