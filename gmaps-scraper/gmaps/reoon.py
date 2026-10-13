@@ -165,7 +165,7 @@ def verify_csv(in_path: Path, out_path: Path, errors_path: Path, results_path: P
         else:
             stats.dropped += 1
 
-    _write(out_path, columns + [STATUS_COLUMN], kept)
+    _write(out_path, columns + ([] if STATUS_COLUMN in columns else [STATUS_COLUMN]), kept)
     if errored:
         _write(errors_path, columns, errored)
     elif errors_path.exists():

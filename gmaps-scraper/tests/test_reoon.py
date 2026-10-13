@@ -127,3 +127,17 @@ def test_account_error_stops_and_leaves_rest_for_rerun(tmp_path):
     assert client.calls == ["a@a.com", "b@b.com"]  # c@c.com never sent
     assert stats.stopped and stats.kept == 1 and stats.errors == 2
     assert [r["name"] for r in _read(err_path)] == ["B", "C"]
+
+
+def test_rerun_on_a_verified_file_keeps_one_status_column(tmp_path):
+    in_path, out_path, err_path, res_path = _paths(tmp_path)
+    with in_path.open("w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=COLUMNS + ["reoon_status"])
+        writer.writeheader()
+        writer.writerow({"name": "A", "primary_email": "a@a.com", "website": "a.com", "reoon_status": ""})
+    verify_csv(in_path, out_path, err_path, res_path, "KEY", client=FakeClient({"a@a.com": [ok("safe")]}),
+               sleep=lambda s: None, log=lambda m: None)
+    with out_path.open(encoding="utf-8-sig") as f:
+        header = f.readline().strip().split(",")
+    assert header.count("reoon_status") == 1
+    assert _read(out_path)[0]["reoon_status"] == "safe"
